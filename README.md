@@ -55,8 +55,3 @@ Once PyTorch and MMCV are successfully installed, install the core dependencies 
 ```bash
 pip install -r requirements.txt
 ```
-## 🤝 Acknowledgements
-We would like to express our sincere gratitude to the authors of the following open-source projects, whose brilliant work laid the foundations for this repository:
-- [cite_start][MPViT](https://github.com/youngwanLEE/MPViT): For the parallel multi-scale token aggregation architecture that powers our depth encoder network[cite: 95, 105].
-- [cite_start][HR-Depth](https://github.com/JiaWangLyu97/HR-Depth): For the high-resolution densely connected decoding nodes that underpin our cross-scale depth feature reconstruction[cite: 96, 109].
-- [cite_start][Monodepth2](https://github.com/nianticlabs/monodepth2): For the foundational self-supervised novel view synthesis paradigm, per-pixel minimum reprojection loss, and auto-masking formulations[cite: 55, 98].
