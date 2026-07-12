@@ -1,2 +1,14 @@
-# SEMF-Depth
-Official implementation of SEMF-Depth: Structure-texture decoupled self-supervised monocular depth estimation framework for complex 3D reconstruction scenes, featuring Structural Edge Enhancement (SEE) strategy and Structure-Edge-Aware Masked Fusion (SMF) mechanism.
+# Structure-Texture Decoupled Monocular Depth Estimation for Complex 3D Reconstruction Scenes
+
+Official PyTorch implementation of **SEMF-Depth**, a novel structure-texture decoupled self-supervised monocular depth estimation framework tailored for complex 3D reconstruction scenes (e.g., ancient architectures).
+
+> [!IMPORTANT]
+> **Code Release Status**: Most of the codebase—including the backbone encoder, pose network and loss functions has been uploaded.
+
+---
+
+## 📢 News & Updates
+- **[2026-07]** 🚀 **Code Repository Initialized.** 
+- **[2026-07]** Paper submitted. 
+
+---
