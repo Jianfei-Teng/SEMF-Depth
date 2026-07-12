@@ -7,7 +7,7 @@ Official PyTorch implementation of **SEMF-Depth**, a novel structure-texture dec
 ## 📢 News & Updates
 - **[2026-07]** 📦 **Dataset & Weights Released**: Custom dataset and initial training weights are now fully available!
 - **[2026-07]** 🚀 **Code Repository Fully Initialized**: Complete codebase uploaded successfully.
-- **[2026-07]** 📄 **Paper Submitted**: Manuscript submitted for review.
+- **[2026-07]** 📄 **Paper Submitted**
 
 ---
 
