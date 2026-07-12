@@ -21,3 +21,37 @@ To facilitate reproduction and training, we have made our custom dataset and bac
 | **Initial Weights** | Pre-trained initial backbone weights required to start training | [🔗 Google Drive](https://drive.google.com/drive/folders/1Tm5n_bvKuYowNrvWEVRSDyEo66Fg-zp2?usp=sharing) |
 
 > 💡 **Note**: Please download these files and place them into the designated data/weight directories before running the training scripts.
+
+---
+
+## 🛠️ Installation & Environment Setup
+
+This codebase is tested and optimized for high-performance deep learning hardware (e.g., **NVIDIA RTX 5090**) using **Python 3.10** and **CUDA 12.9**. 
+
+Follow the steps below to initialize your environment safely using `conda`:
+
+### 1. Create a Virtual Environment
+Initialize a fresh isolated environment with Python 3.10:
+```bash
+conda create -n semf_depth python=3.10 -y
+conda activate semf_depth
+```
+
+### 2. Install PyTorch & Target CUDA Toolkit
+For optimal compatibility with the RTX 5090 architecture running on CUDA 12.9, install the matching PyTorch version:
+```bash
+pip install torch>=2.0.0 torchvision>=0.15.0 --index-url https://download.pytorch.org/whl/cu129
+```
+
+### 3. Install OpenMMLab Dependencies (Critical)
+Our framework relies on `mmcv>=2.0.0` for advanced geometric feature handling. To bypass local compilation bottlenecks and avoid environment conflicts, install its pre-built wheel directly via `openmim`:
+```bash
+pip install -U openmim
+mim install "mmcv>=2.0.0"
+```
+
+### 4. Install Remaining Packages
+Once PyTorch and MMCV are successfully installed, install the core dependencies listed in `requirements.txt`:
+```bash
+pip install -r requirements.txt
+```
