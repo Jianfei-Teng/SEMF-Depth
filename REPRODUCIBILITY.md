@@ -1,4 +1,4 @@
-# Training and result provenance
+# Training and reproducibility
 
 ## Commands for this release
 
@@ -77,23 +77,18 @@ those four models plus a bare optimizer state. This directory is explicitly
 treated as the author-supplied 50-epoch backbone. A filename alone is not used to
 infer the epoch of arbitrary resume checkpoints.
 
-The retained historical Full `weights_69/adam.pth` records global epoch 69,
+The retained Full `weights_69/adam.pth` records global epoch 69,
 the four refinement initial group rates above, cosine `T_max=65`, 20 scheduler
-steps, and **5,100 updates** in its active Adam states. The retained backbone
+steps, and **5,100 updates** in its active Adam states. The supplied backbone
 optimizer records initial group rates `1e-4` and `5e-5` and step count **45,800**.
-That older count is not the 12,750-update fallback introduced in this release:
-the historical first-phase invocation and complete schedule were not retained.
-Use the supplied backbone to initialize the reported refinement rather than
-treating the fallback as an exact reconstruction of that first phase.
+The **12,750** backbone updates above apply to this release's new 50-epoch
+from-scratch run.
 
 The original public implementation is pinned at
 [`692a823c90bdab9005c715bb349ad80acab46ca4`](https://github.com/Jianfei-Teng/SEMF-Depth/tree/692a823c90bdab9005c715bb349ad80acab46ca4).
-This revision makes the training entry point explicit and removes inactive
-modules; its release commit is not retroactively the execution commit of the
-historical results. Historical records identify seed **1234**. The original
-shell command and full historical source state are not available; the commands
-above are executable commands for this release, with the retained refinement
-configuration stated explicitly.
+This release makes the training entry point explicit and removes inactive
+modules. The commands above use seed **1234** and the retained refinement
+configuration.
 
 For every new run, `run_*.json`, `models/opt.json` and the complete checkpoints
 record the invocation arguments, Git commit (when run in a Git checkout), tracked

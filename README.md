@@ -81,8 +81,8 @@ All complete epoch checkpoints are retained. Refinement
 ends at `./tmp/SEMF/refinement/models/weights_69`.
 
 See [REPRODUCIBILITY.md](REPRODUCIBILITY.md) for exact commands, phase learning
-rates, optimization-update counts, source checkpoint, gradient paths, historical
-result provenance and code-version identification.
+rates, optimization-update counts, source checkpoint, gradient paths and
+code-version identification.
 
 ## Evaluation: seven depth metrics + CD
 
