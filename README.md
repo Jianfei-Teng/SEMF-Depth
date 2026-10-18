@@ -1,5 +1,5 @@
-<h1 align="center">Texture-Structure Decoupled Monocular Depth Estimation<br>
-in Complex 3D Reconstruction Scenes</h1>
+<h1 align="center">Texture-Structure Decoupled Monocular Depth<br>
+Estimation in Complex 3D Reconstruction Scenes</h1>
 
 <p align="center">Jianfei Teng · Xiaoling Yao · Lihua Hu · Yang Ma · Jifu Zhang</p>
 
