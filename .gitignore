@@ -16,6 +16,7 @@
 *.jpg
 *.jpeg
 *.png
+!/assets/overall_architecture.png
 *.tif
 *.tiff
 events.out.tfevents.*

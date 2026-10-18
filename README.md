@@ -1,13 +1,12 @@
 # Texture-Structure Decoupled Monocular Depth Estimation for Complex 3D Reconstruction Scenes
 
-PyTorch implementation of SEMF-Depth, with two-stage training and evaluation
-of seven depth metrics and Chamfer distance (CD).
+PyTorch implementation of SEMF-Depth.
+
+![Overview of SEMF-Depth](assets/overall_architecture.png)
 
 ## Installation
 
-Use Python 3.10 or newer and PyTorch 2.0 or newer. Install a matching
-PyTorch/torchvision build for your GPU following the
-[official instructions](https://pytorch.org/get-started/locally/), then run:
+Install Python 3.10+, PyTorch 2.0+ and a matching torchvision build, then run:
 
 ```bash
 git clone https://github.com/Jianfei-Teng/SEMF-Depth.git
@@ -15,118 +14,88 @@ cd SEMF-Depth
 pip install -r requirements.txt
 ```
 
-The model uses `mmcv-lite` and `mmengine`; compiled MMCV CUDA operators
-are not required.
+The model uses `mmcv-lite`; compiled MMCV CUDA operators are not required.
 
-## Data and pretrained backbone
+## Data and checkpoints
 
-Place the dataset and the supplied 50-epoch backbone as follows. All commands
-below run from the repository root.
+Place the dataset in `./ancient_architecture_data` and the supplied 50-epoch
+backbone in `./weights`:
 
 ```text
-SEMF-Depth/
-├── ancient_architecture_data/
-│   ├── train/image_02/data/*.jpg
-│   ├── val/image_02/data/*.jpg
-│   ├── test/<scene>/...
-│   └── splits/
-│       ├── eigen_zhou/{train,val}_files.txt
-│       └── eigen/gt_npy/*.npy
-├── splits/
-│   ├── ancient/{train,val}_files.txt
-│   ├── eigen/{test_files,test_pairs}.txt
-│   └── 相机内参.json
-└── weights/
-    ├── encoder.pth
-    ├── depth.pth
-    ├── pose_encoder.pth
-    └── pose.pth
+ancient_architecture_data/
+├── train/image_02/data/
+├── val/image_02/data/
+├── test/
+└── splits/eigen_zhou/{train,val}_files.txt
+weights/
+├── encoder.pth
+├── depth.pth
+├── pose_encoder.pth
+└── pose.pth
 ```
 
-Training uses only the left camera (`image_02`) with frame offsets `[0, -1, 1]`.
-It reads the dataset's train/validation lists and keeps targets with both
-temporal neighbors. The effective left-only lists are also included in
-`splits/ancient`; select them with `--split_dir ./splits/ancient`.
-Test image/GT pairs are defined in `splits/eigen/test_pairs.txt`.
+Training uses left-view triplets with offsets `[0, -1, 1]`. Fixed train/validation
+lists are also provided in `splits/ancient`; use `--split_dir ./splits/ancient`
+to select them. Test pairs and camera intrinsics are in `splits/eigen/test_pairs.txt`
+and `splits/相机内参.json`.
 
 ## Training
 
 ```bash
 python train.py \
-  --stage auto \
-  --data_path ./ancient_architecture_data \
-  --backbone_weights ./weights \
-  --log_dir ./tmp --model_name SEMF \
+  --stage auto --data_path ./ancient_architecture_data \
+  --backbone_weights ./weights --log_dir ./tmp --model_name SEMF \
   --height 480 --width 640 \
-  --batch_size 8 --accumulation_steps 2 --num_workers 4 \
-  --seed 1234 --learning_rate 2e-6 --head_learning_rate 2e-4 \
-  --backbone_learning_rate 5e-5 --decoder_learning_rate 1e-4
+  --batch_size 8 --accumulation_steps 2 --num_workers 4 --seed 1234 \
+  --backbone_learning_rate 5e-5 --decoder_learning_rate 1e-4 \
+  --learning_rate 2e-6 --head_learning_rate 2e-4
 ```
 
-With the backbone in `./weights` or `./weights/weights_49`, this runs 20
-refinement epochs, numbered 50–69. If it is absent, the same command first
-trains the backbone for 50 epochs and then refines `weights_49`.
-Use `--stage refine` to require the supplied backbone, or `--stage backbone`
-to run only the first stage. Optional encoder initialization for the first
-stage is supplied with `--encoder_pretrained path/to/mpvit.pth`.
+With a backbone in `./weights` or `./weights/weights_49`, this runs refinement
+for epochs 50–69. Otherwise, it first trains the backbone for epochs 0–49.
+Use `--stage refine` to require an existing backbone, or `--stage backbone`
+to run only the first stage. For ImageNet encoder initialization, add
+`--encoder_pretrained ./ckpt/mpvit_small.pth`.
 
-Outputs are saved under `./tmp/SEMF/backbone/` and `./tmp/SEMF/refinement/`.
-Every epoch's complete checkpoint is retained. The final model is
-`./tmp/SEMF/refinement/models/weights_69`.
+Both stages use AdamW. The backbone stage follows the
+[MonoViT](https://github.com/zxcqlf/MonoViT) optimizer grouping:
 
-To resume the same run, append `--resume` to its training command. This restores
-the models, optimizer, scheduler, epoch and random states. An explicit checkpoint
-directory can also follow `--resume`.
-
-Both stages use AdamW with betas `(0.9, 0.999)` and epsilon `1e-8`.
-Initial parameter-group learning rates are:
-
-| Phase | Epochs | Parameter groups | Initial learning rates |
-|---|---|---|---|
-| Backbone | 0–49 | Depth decoder and pose networks; MPViT encoder | `1e-4`; `5e-5` |
-| Refinement | 50–69 | SMF and pose decoder; depth decoder and pose encoder | `2e-4`; `2e-6` |
+| Phase | Parameter groups | Initial learning rates |
+|---|---|---|
+| Backbone (50 epochs) | MPViT encoder; depth decoder and pose networks | `5e-5`; `1e-4` |
+| Refinement (20 epochs) | Depth decoder and pose encoder; SMF and pose decoder | `2e-6`; `2e-4` |
 
 The backbone uses `ExponentialLR(gamma=0.9)`. Refinement starts a fresh
-optimizer and `CosineAnnealingLR(T_max=65, eta_min=1e-7)`, with 20 epoch-wise
-steps and no warmup or batch-size LR scaling. Weight decay is `0.01`;
-one-dimensional parameters use `0` during refinement. The depth encoder is
-frozen during refinement. Fixed SEE parameters remain in the head groups.
+optimizer and `CosineAnnealingLR(T_max=65, eta_min=1e-7)`, stepped once per
+epoch. The depth encoder and SEE are fixed during refinement; the decoder
+and SMF are optimized using photometric reprojection and smoothness losses.
 
-The default lists give 4,072 training targets, 509 batches and 255 optimizer
-updates per epoch, including the last accumulation window: 12,750 updates for
-a new backbone run and 5,100 for refinement. The supplied 50-epoch backbone
-records 45,800 optimizer steps; the retained Full `weights_69` records 5,100
-refinement updates.
-
-Training uses photometric reprojection and edge-aware smoothness losses.
-SEE is fixed; the decoder and SMF are updated through the fused prediction.
-See the overall architecture figure in the paper for the loss and gradient paths.
-
-Reference implementation:
+The default lists contain 4,072 valid targets: 255 optimizer updates per epoch
+at the batch settings above, or 12,750 for a new backbone and 5,100 for refinement.
+The supplied 50-epoch backbone's Adam state records 45,800 updates;
+the retained Full checkpoint records 5,100 refinement updates.
+The architecture follows reference commit
 [`692a823`](https://github.com/Jianfei-Teng/SEMF-Depth/tree/692a823c90bdab9005c715bb349ad80acab46ca4).
-Each run records its checkout commit, command, seed and update counts.
+Each run saves its command, seed, checkout commit and update counts.
 
-Use `python train.py --print_config` to inspect the plan without training.
-View logs with `tensorboard --logdir ./tmp/SEMF`.
+All epoch checkpoints are retained. The final model is saved to
+`./tmp/SEMF/refinement/models/weights_69`. Append `--resume` to restore a run,
+including optimizer, scheduler and random states. Use `--print_config` to inspect
+the configuration, and `tensorboard --logdir ./tmp/SEMF` to view logs.
 
 ## Evaluation
 
 ```bash
 python evaluate_metrics.py \
   --weights ./tmp/SEMF/refinement/models/weights_69 \
-  --data-root ./ancient_architecture_data \
-  --output-dir ./results/SEMF
+  --data-root ./ancient_architecture_data --output-dir ./results/SEMF
 ```
 
-This evaluates Abs Rel, Sq Rel, RMSE, RMSE log, the three accuracies at
-`1.25`, `1.25^2`, `1.25^3`, and CD. The bundled manifest contains 489 RGB/GT
-pairs. Use `--scenes 01 11 12`, for example, to select scenes, or `--dry-run`
-to check pairs and intrinsics without inference.
+This computes the seven depth metrics and CD on the 489 RGB–GT pairs in the
+bundled manifest. Use `--scenes 01 11 12` to select scenes or `--dry-run` to
+check the inputs without inference.
 
-The packaged scene IDs `02/04/06/09` correspond to additional scenes
-`3/5/10/9`. The two-root command below uses the original scene IDs.
-
-For the paper's 12 scenes in the separately stored original and additional sets:
+For the paper's 12 scenes stored in separate original and additional test folders:
 
 ```bash
 python evaluate_metrics.py \
@@ -137,19 +106,15 @@ python evaluate_metrics.py \
   --output-dir ./results/selected12
 ```
 
-This selection contains 489 pairs. Adding `06` to `--scenes` includes the
-55 images in the original scene 06, giving 13 scenes and 544 pairs.
-RGB files may be JPG, JPEG or PNG; ground-truth depth alone is not a model input.
+This also selects 489 pairs. Adding original scene `06` gives 544 pairs.
+In the packaged dataset, scene IDs `02/04/06/09` instead correspond to
+additional scenes `3/5/10/9`. JPG, JPEG and PNG inputs are supported.
 
-Evaluation uses the Garg crop, per-image median scaling and a scoring range
-of 0.001–80 m. CD uses `splits/相机内参.json`, scaled by the full depth-map
-dimensions. It is the sum of the two mean squared nearest-neighbor distances
-in m², with at most 20,000 sampled points per cloud; `--cd-max-points 0` uses
-all points.
-
-The two-root command produces three TXT files: one per test set and one
-combined report, with per-scene results, an equal-scene mean and an image mean.
-See `python evaluate_metrics.py --help` for other options.
+Evaluation uses the Garg crop, per-image median scaling and a 0.001–80 m range.
+CD uses full-depth-map intrinsics and the sum of bidirectional mean squared
+nearest-neighbor distances (m²), sampling up to 20,000 points per cloud.
+The two-folder command writes three TXT reports: one per test set and one
+combined report, with scene means and image means. See `--help` for options.
 
 ## License
 
