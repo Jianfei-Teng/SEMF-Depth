@@ -31,14 +31,14 @@ from torch.utils.tensorboard import SummaryWriter
 # AMP removed
 # from torch.cuda.amp import autocast, GradScaler
 
-from utils import *
-from kitti_utils import *
-from layers import *
+from common.utils import *
+from common.kitti_utils import *
+from common.layers import *
 
 import datasets
 import networks
-from checkpoint_compat import optimizer_state_without_unused_gate
-from training_plan import optimizer_groups
+from common.checkpoint_compat import optimizer_state_without_unused_gate
+from common.training_plan import optimizer_groups
 
 
 # from IPython import embed  # Removed: not available on production servers

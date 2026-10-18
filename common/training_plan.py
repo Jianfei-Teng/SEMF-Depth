@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from data_paths import training_splits
+from .data_paths import training_splits
 
 BACKBONE_MODELS = ("encoder", "depth", "pose_encoder", "pose")
 FULL_MODELS = ("encoder", "depth", "edge_head", "depth_head", "pose_encoder", "pose")
@@ -14,7 +14,7 @@ REFERENCE_COMMIT = "692a823c90bdab9005c715bb349ad80acab46ca4"
 
 
 def code_version():
-    root = Path(__file__).resolve().parent
+    root = Path(__file__).resolve().parents[1]
     try:
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root,
                                          stderr=subprocess.DEVNULL, text=True).strip()

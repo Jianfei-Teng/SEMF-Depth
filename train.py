@@ -6,7 +6,7 @@ import os
 import sys
 
 from options import MonodepthOptions
-from training_plan import build_plan, describe_plan
+from common.training_plan import build_plan, describe_plan
 
 
 def main(args=None):

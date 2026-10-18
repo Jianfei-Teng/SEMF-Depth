@@ -12,6 +12,10 @@ uses these signals to control local corrections to the backbone prediction.
 
 ![Overview of SEMF-Depth](assets/overall_architecture.png)
 
+SEE and SMF:
+
+![SEE strategy and SMF mechanism](assets/module_mechanism.png)
+
 ## Installation
 
 Install Python 3.10+, PyTorch 2.0+ and a matching torchvision build, then run:
@@ -54,6 +58,8 @@ to select them. Test pairs and camera intrinsics are in `splits/eigen/test_pairs
 and `splits/相机内参.json`.
 
 ## Training
+
+Training was performed on a single NVIDIA RTX 5090 GPU (32 GB VRAM).
 
 Training consists of 50 backbone epochs followed by 20 refinement epochs:
 
@@ -116,6 +122,27 @@ bundled manifest, `splits/eigen/test_pairs.txt`. JPG, JPEG and PNG inputs are su
 Evaluation uses the Garg crop, per-image median scaling and a 0.001–80 m range.
 CD uses full-depth-map intrinsics and the sum of bidirectional mean squared
 nearest-neighbor distances (m²), sampling up to 20,000 points per cloud.
+
+## Results
+
+Mean results over the 12 test sub-scenes. RMSE is in m and CD is in m².
+
+| Method | Abs Rel ↓ | Sq Rel ↓ | RMSE ↓ | RMSE log ↓ | δ < 1.25 ↑ | δ < 1.25² ↑ | δ < 1.25³ ↑ | CD ↓ |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Monodepth2 | 0.1424 | 0.5166 | 0.3975 | 0.1770 | 0.8488 | 0.9595 | 0.9856 | 0.1179 |
+| ManyDepth | 0.2692 | 0.2551 | 0.5879 | 0.3144 | 0.5780 | 0.8499 | 0.9434 | 0.1281 |
+| MonoViT | 0.1255 | 0.0565 | 0.2845 | 0.1646 | 0.8619 | 0.9679 | 0.9881 | 0.1340 |
+| Lite-Mono | 0.2461 | 0.2163 | 0.5392 | 0.2915 | 0.6185 | 0.8681 | 0.9545 | 0.2890 |
+| Mono-ViFI | 0.1310 | 0.0817 | 0.3263 | 0.1696 | 0.8544 | 0.9677 | 0.9886 | 0.1250 |
+| DCPI-Depth | 0.3338 | 0.3244 | 0.7057 | 0.3891 | 0.4564 | 0.7567 | 0.9048 | 6.5350 |
+| SPIdepth | 0.1651 | 0.0918 | 0.3577 | 0.2066 | 0.7669 | 0.9492 | 0.9828 | 0.1939 |
+| MG-Mono | 0.1418 | 0.0934 | 0.3726 | 0.1854 | 0.8380 | 0.9532 | 0.9783 | 0.1927 |
+| Manydepth2 | 0.2460 | 0.2142 | 0.5350 | 0.2907 | 0.6162 | 0.8699 | 0.9524 | 0.1422 |
+| **SEMF-Depth (ours)** | **0.1191** | **0.0516** | **0.2732** | **0.1578** | **0.8777** | **0.9707** | **0.9892** | **0.1169** |
+
+Qualitative depth comparisons on five test examples:
+
+![RGB, ground truth and depth predictions from the comparison methods](assets/depth_comparison.png)
 
 ## Configuration and data checks
 

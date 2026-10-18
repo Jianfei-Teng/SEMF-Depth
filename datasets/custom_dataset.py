@@ -3,7 +3,7 @@ from __future__ import absolute_import, division, print_function
 import numpy as np
 import PIL.Image as pil
 
-from data_paths import image_path
+from common.data_paths import image_path
 from .mono_dataset import MonoDataset
 
 

@@ -17,6 +17,8 @@
 *.jpeg
 *.png
 !/assets/overall_architecture.png
+!/assets/module_mechanism.png
+!/assets/depth_comparison.png
 *.tif
 *.tiff
 events.out.tfevents.*
