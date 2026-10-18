@@ -15,9 +15,8 @@ import random
 import numpy as np
 
 
-def set_seed(seed=3407):
-    """Set random seed for reproducibility (The 3407 magic seed)
-    """
+def set_seed(seed=1234):
+    """Set random seed for reproducibility (project-wide default 1234)."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -52,22 +51,22 @@ def colormap(x, name="magma"):
     """
     if isinstance(x, torch.Tensor):
         x = x.detach().cpu().numpy()
-    
+
     # Ensure x is 2D
     if x.ndim == 3:
         x = x.squeeze()
-        
+
     # Standardize to [0, 1] for colormap, clipping extremes for contrast
     vmin = np.percentile(x, 2)
     vmax = np.percentile(x, 98)
-    
+
     if vmax > vmin:
         x = np.clip(x, vmin, vmax)
         x = (x - vmin) / (vmax - vmin)
     else:
         # Fallback if image is completely flat
         x = np.zeros_like(x)
-        
+
     cmap = cm.get_cmap(name)
     color_img = cmap(x)[:, :, :3]  # Drop alpha
     # RGB to Tensor (3, H, W)

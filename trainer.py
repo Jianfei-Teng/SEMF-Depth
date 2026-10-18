@@ -10,9 +10,10 @@ import numpy as np
 import time
 import os
 import json
-import random
 import warnings
 import gc
+import random
+from pathlib import Path
 
 # Suppress PyTorch Inductor warnings about online softmax
 warnings.filterwarnings(
@@ -36,6 +37,8 @@ from layers import *
 
 import datasets
 import networks
+from checkpoint_compat import optimizer_state_without_unused_gate
+from training_plan import optimizer_groups
 
 
 # from IPython import embed  # Removed: not available on production servers
@@ -54,7 +57,7 @@ class Trainer:
         self.parameters_to_train = []
 
         # Scientific Reproducibility: Custom Seed 1234
-        set_seed(1234)
+        set_seed(self.opt.seed)
 
         self.device = torch.device("cpu" if self.opt.no_cuda else "cuda")
 
@@ -62,7 +65,7 @@ class Trainer:
         if not self.opt.no_cuda:
             torch.backends.cuda.matmul.allow_tf32 = True  # For Ampere+ (A100/3090)
             torch.backends.cudnn.allow_tf32 = True
-            torch.backends.cudnn.benchmark = True  # [SOTA] Double throughput for fixed resolutions
+            torch.backends.cudnn.benchmark = True
 
         self.num_scales = len(self.opt.scales)
         self.num_input_frames = len(self.opt.frame_ids)
@@ -81,7 +84,8 @@ class Trainer:
         # 1. Encoder (Backbone Selection)
         if self.opt.backbone == "mpvit":
             print("  [Model] Using MPViT-Small Backbone")
-            self.models["encoder"] = networks.mpvit_small()
+            self.models["encoder"] = networks.mpvit_small(pretrained=(
+                self.opt.encoder_pretrained if self.opt.phase == "backbone" and not self.opt.load_weights_folder else None))
             # MPViT-Small outputs 5 scales: Stem(64) + 4 Stages(128, 216, 288, 288)
             # Total channels: [64, 128, 216, 288, 288]
             self.models["encoder"].num_ch_enc = [64, 128, 216, 288, 288]
@@ -105,23 +109,8 @@ class Trainer:
         self.models["depth"].to(self.device)
         self.parameters_to_train += list(self.models["depth"].parameters())
 
-        # 3. Multi-Head Architecture (Edge + Normal + Depth Fusion)
+        # 3. SEE responses and SMF auxiliary prediction.
         if not self.opt.disable_multihead:
-            # F_dec channels: 16 (from Decoder) -> BUT we exposed the 32-ch feature in hr_decoder.py
-            # Actually, let's verify hr_decoder.py change.
-            # In hr_decoder.py: outputs[("F_dec", 0)] = x where x was input to last conv
-            # MPViT small num_ch_enc is [64, 128, 216, 288, 288]
-            # HRDecoder num_ch_dec is [16, 32, 64, 128, 256]
-            # The code I wrote in hr_decoder puts F_dec as the feature after X_04_Conv_1
-            # X_04 comes from num_ch_enc[0]//2 = 32 channels.
-            # Then X_04_Conv_0(32->16), X_04_Conv_1(16->16).
-            # So F_dec has 16 channels.
-            # Wait, my implementation_plan said 32, but standard HRDecoder reduces it.
-            # Let's adjust heads to accept 16 channels if that's what comes out,
-            # OR relies on the fact I modified hr_decoder to output what I need.
-            # Looking at my edit to hr_decoder.py:
-            # x = features["X_04"] (32 ch) -> Conv0(32->16) -> Conv1(16->16) -> outputs[F_dec]
-            # so F_dec has 16 channels.
             f_dec_channels = 16
 
             # Edge Head
@@ -138,7 +127,6 @@ class Trainer:
                 fdec_channels=f_dec_channels,
                 fedge_channels=32,
                 scales=self.opt.scales,
-                alpha_rgb=self.opt.alpha_rgb,
                 target_sparsity=self.opt.target_sparsity
             )
             self.models["depth_head"].to(self.device)
@@ -149,7 +137,7 @@ class Trainer:
             if self.opt.pose_model_type == "separate_resnet":
                 self.models["pose_encoder"] = networks.ResnetEncoder(
                     self.opt.num_layers,
-                    self.opt.weights_init == "pretrained",
+                    self.opt.weights_init == "pretrained" and not self.opt.load_weights_folder,
                     num_input_images=self.num_pose_frames)
 
                 self.models["pose_encoder"].to(self.device)
@@ -183,100 +171,30 @@ class Trainer:
             self.models["predictive_mask"].to(self.device)
             self.parameters_to_train += list(self.models["predictive_mask"].parameters())
 
-        # ======================================================================
-        # Optimizer & Scheduler & AMP
-        # ======================================================================
-        # ======================================================================
-        # Unified Differential Optimizer & Scheduler (10x Head Speed)
-        # ======================================================================
-        # Identify Backbone Encoders & Decoders (High Stability, Low LR 1e-6)
-        backbone_params = []
-        if "encoder" in self.models:
-            backbone_params += list(self.models["encoder"].parameters())
-        if "depth" in self.models:
-            # [FIX Stage II] The HRDecoder is part of the backbone infrastructure.
-            # It should be fine-tuned with the same stability (1e-6) as the encoder.
-            backbone_params += list(self.models["depth"].parameters())
-        if "pose_encoder" in self.models:
-            backbone_params += list(self.models["pose_encoder"].parameters())
-        backbone_param_ids = set(id(p) for p in backbone_params)
-
-        # Identify Randomly Initialized Heads (Fast Learning, High LR 1e-4)
-        head_params = [p for p in self.parameters_to_train if id(p) not in backbone_param_ids]
-
-        # [Architectural Hardening] Weight Decay Isolation
-        # Bias and Normalization parameters must NOT be decayed.
-        def get_optimizer_params(param_list, lr, weight_decay):
-            decay = []
-            no_decay = []
-            for p in param_list:
-                # [BUG FIX] NEVRE SKIP params based on requires_grad here.
-                # If we skip them now, they will NEVER be added to the optimizer,
-                # even if we set requires_grad=True later in Stage II!
-                # if not p.requires_grad: continue
-
-                # len(p.shape) == 1 handles biases and 1D norm weights (BatchNorm/GroupNorm/LayerNorm)
-                if len(p.shape) == 1:
-                    no_decay.append(p)
-                else:
-                    decay.append(p)
-            return [
-                {'params': decay, 'lr': lr, 'weight_decay': weight_decay},
-                {'params': no_decay, 'lr': lr, 'weight_decay': 0.0}
-            ]
-
-        self.params = []
-        # Group 0-1: Heads (1e-4) — get_optimizer_params returns [decay, no_decay] = 2 groups
-        head_groups = get_optimizer_params(head_params, self.opt.head_learning_rate, 1e-2)
-        self.params.extend(head_groups)
-        self.num_head_groups = len(head_groups)  # Track for warmup LR logic
-
-        # Group 2-3: Backbones (1e-6) - Decoupled to 1/100 of Head LR for absolute stability
-        # Head LR is 1e-4, Backbone base is 1e-5.
-        # (1e-5 / 10.0) = 1e-6. This protects the pre-trained ViT feature space.
-        self.params.extend(get_optimizer_params(backbone_params, self.opt.learning_rate / 10.0, 1e-2))
-
-
-
-        self.model_optimizer = optim.AdamW(self.params)
-
-        # [LR Scheduler]
-        # CosineAnnealing: T_max = num_epochs - warmup_epochs
-        # Ensure it reaches the exact minimum on the last epoch, with absolutely no rebound.
-        cosine_T_max = self.opt.num_epochs - self.opt.warmup_epochs
-
-        self.model_lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            self.model_optimizer,
-            T_max=cosine_T_max,
-            eta_min=1e-7
-        )
-
+        self.params = optimizer_groups(self.models, self.opt)
+        self.num_head_groups = 2 if self.opt.phase == "refinement" else 0
+        self.model_optimizer = optim.AdamW(self.params, betas=(0.9, 0.999), eps=1e-8)
+        if self.opt.phase == "backbone":
+            self.model_lr_scheduler = optim.lr_scheduler.ExponentialLR(
+                self.model_optimizer, gamma=self.opt.backbone_lr_decay)
+        else:
+            self.model_lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                self.model_optimizer, T_max=65, eta_min=1e-7)
+        self.optimizer_updates = 0
+        self.loaded_training_state = None
         if self.opt.load_weights_folder is not None:
             self.load_model()
 
-        # [ ACCELERATION] Linux-exclusive torch.compile for core modules.
-        # Skip NormalHead/DCNv4 to avoid triton/compiler conflicts with custom kernels.
+        # Linux-exclusive compilation of the encoder and decoder.
         # [FIX] Triton is Linux-only. Guard with platform check to prevent TritonMissing on Windows.
         import sys
-        if not self.opt.no_cuda and sys.platform.startswith('linux'):
+        if not self.opt.no_cuda and not self.opt.no_compile and sys.platform.startswith('linux'):
             print("  Enabling torch.compile for Encoder and Depth Decoder...")
             self.models["encoder"] = torch.compile(self.models["encoder"])
             self.models["depth"] = torch.compile(self.models["depth"])
-            # [FIX] Do NOT compile depth_head due to PyTorch Dynamo bug with `torch.quantile` 
-            # and symbolic sizes inside `_compute_soft_mask`.
-            # if not self.opt.disable_multihead:
-            #    self.models["depth_head"] = torch.compile(self.models["depth_head"])
+            # Leave quantile-based routing outside torch.compile.
         elif not self.opt.no_cuda:
             print("  [INFO] torch.compile skipped (Triton not available on Windows).")
-
-        # RTX 50 Series Acceleration: torch.compile
-        # (Silently disabled during ablations to prevent DCNv4 memory explosion)
-        try:
-            # self.models["encoder"] = torch.compile(self.models["encoder"])
-            # self.models["depth"] = torch.compile(self.models["depth"])
-            pass
-        except Exception as e:
-            pass
 
         try:
             torch.set_float32_matmul_precision("high")
@@ -287,141 +205,27 @@ class Trainer:
         print("Models and tensorboard events files are saved to:\n  ", self.log_path)
         print("Training is using:\n  ", self.device)
 
-        # ======================================================================
-        # Data Loading
-        # ======================================================================
-        if self.opt.no_dataset_scan:
-            print("  [Trainer] Skipping dataset scan and loader initialization as requested.")
-            train_filenames = []
-            val_filenames = []
-            train_dataset = None
-            val_dataset = None
-        else:
-            datasets_dict = {"kitti": datasets.KITTIRAWDataset,
-                             "kitti_odom": datasets.KITTIOdomDataset,
-                             "custom": datasets.CustomDataset}
-            self.dataset = datasets_dict[self.opt.dataset]
-
-            if self.opt.dataset == "custom":
-                # Check for existing splits
-                fpath = os.path.join(os.path.dirname(__file__), "splits", "custom", "{}_files.txt")
-                if os.path.exists(fpath.format("train")):
-                    train_filenames = readlines(fpath.format("train"))
-                    val_filenames = readlines(fpath.format("val"))
-                else:
-                    print(f"Scanning data path: {self.opt.data_path}")
-                    train_filenames = []
-                    val_filenames = []
-
-                    if os.path.exists(self.opt.data_path):
-                        # Detect if the provided data_path is already inside a specific split folder
-                        is_split_folder = any(
-                            os.path.isdir(os.path.join(self.opt.data_path, sd)) for sd in ["image_02", "image_03"])
-
-                        if is_split_folder:
-                            # If given e.g. "kitti_data/train", the parent "kitti_data" has train/val splits
-                            parent_path = os.path.dirname(self.opt.data_path)
-                            splits_to_scan = [
-                                (os.path.basename(self.opt.data_path), train_filenames),  # Itself, probably 'train'
-                            ]
-                            # Try to find a sibling 'val' or 'test' folder to serve as validation
-                            if os.path.isdir(os.path.join(parent_path, "val")):
-                                splits_to_scan.append(("val", val_filenames))
-                                print(
-                                    f"  [Trainer] Auto-detected sibling validation set at: {os.path.join(parent_path, 'val')}")
-                            elif os.path.isdir(os.path.join(parent_path, "test")):
-                                splits_to_scan.append(("test", val_filenames))
-                                print(
-                                    f"  [Trainer] Auto-detected sibling validation set at: {os.path.join(parent_path, 'test')}")
-
-                            scan_base_path = parent_path
-                        else:
-                            splits_to_scan = [("train", train_filenames), ("val", val_filenames)]
-                            scan_base_path = self.opt.data_path
-
-                        for split_dir, file_list in splits_to_scan:
-                            split_path = os.path.join(scan_base_path, split_dir)
-                            if not os.path.isdir(split_path):
-                                continue
-
-                            # User Request: In TJF mono vit fork, only use left images from kitti_data\train\image_02; val uses the same. Do not use image_03.
-                            for side_dir, side_label in [("image_02", "l")]:
-                                side_path = os.path.join(split_path, side_dir)
-
-                                # Support custom KITTI hierarchy where images are in 'data' subfolder
-                                scan_path = side_path
-                                if os.path.isdir(os.path.join(side_path, "data")):
-                                    scan_path = os.path.join(side_path, "data")
-                                elif os.path.isdir(os.path.join(side_path, "data_jpg")):
-                                    scan_path = os.path.join(side_path, "data_jpg")
-                                elif os.path.isdir(os.path.join(side_path, "data_png")):
-                                    scan_path = os.path.join(side_path, "data_png")
-
-                                if os.path.isdir(scan_path):
-                                    images = sorted([f for f in os.listdir(scan_path) if
-                                                     f.lower().endswith('.jpg') or f.lower().endswith('.png')])
-                                    for img in images:
-                                        try:
-                                            idx = int(os.path.splitext(img)[0])
-                                            # format: folder frame_index side
-                                            # Since custom dataset splits might interpret 'folder' differently,
-                                            # we use relative path from data_path
-                                            folder_rel = os.path.join(split_dir, side_dir) if split_dir else side_dir
-                                            file_list.append(f"{folder_rel} {idx} {side_label}")
-                                        except:
-                                            continue
-
-                    if len(train_filenames) > 0 or len(val_filenames) > 0:
-                        print(f"Auto-detected images. Train: {len(train_filenames)}, Val: {len(val_filenames)}")
-                    else:
-                        print("WARNING: No images found during auto-scan.")
-
-            else:
-                fpath = os.path.join(os.path.dirname(__file__), "splits", self.opt.split, "{}_files.txt")
-                train_filenames = readlines(fpath.format("train"))
-                val_filenames = readlines(fpath.format("val"))
-
-            img_ext = '.png' if self.opt.png else '.jpg'
-            num_train_samples = len(train_filenames)
-            self.num_total_steps = num_train_samples // self.opt.batch_size * self.opt.num_epochs
-
-            # If trainer auto-detected split folders (e.g. data_path="xxx/train", scan_base="xxx"),
-            # we should pass the corrected scan_base_path so custom datasets can attach image paths securely.
-            dataset_root_path = scan_base_path if (
-                        self.opt.dataset == "custom" and not self.opt.no_dataset_scan) else self.opt.data_path
-
-            train_dataset = self.dataset(
-                dataset_root_path, train_filenames, self.opt.height, self.opt.width,
-                self.opt.frame_ids, 4, is_train=True, img_ext=img_ext)
-            self.train_loader = DataLoader(
-                train_dataset, self.opt.batch_size, True,
-                num_workers=self.opt.num_workers, pin_memory=True, drop_last=True,
-                # [SOTA FIX] Keep worker processes alive and prefetch data to fully saturate your 5090!
-                persistent_workers=True if self.opt.num_workers > 0 else False,
-                prefetch_factor=2 if self.opt.num_workers > 0 else None)
-
-            val_dataset = self.dataset(
-                dataset_root_path, val_filenames, self.opt.height, self.opt.width,
-                self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
-            self.val_loader = DataLoader(
-                val_dataset, self.opt.batch_size, True,
-                num_workers=self.opt.num_workers, pin_memory=True, drop_last=True,
-                # [SOTA FIX] Validation set also needs persistent workers to prevent process teardown/rebuild overhead from frequent evaluation.
-                persistent_workers=True if self.opt.num_workers > 0 else False,
-                prefetch_factor=2 if self.opt.num_workers > 0 else None)
-            self.val_iter = iter(self.val_loader)
-
-            # [QUALITATIVE ANCHOR] Create a fixed batch for consistent qualitative comparison
-            # We take the first batch with shuffle=False to ensure "The 4 Pillars" (fixed images)
-            # are logged every time, allowing for perfect side-by-side evolutionary analysis.
-            fixed_dataset = self.dataset(
-                dataset_root_path, val_filenames, self.opt.height, self.opt.width,
-                self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
-            self.fixed_loader = DataLoader(
-                fixed_dataset, self.opt.batch_size, shuffle=False,
-                num_workers=self.opt.num_workers, pin_memory=True, drop_last=True)
-            self.fixed_val_batch = next(iter(self.fixed_loader))
-            print("  [Visualization] Fixed-index qualitative anchor batch initialized.")
+        # Fixed left-camera lists are validated before model construction.
+        self.dataset = datasets.CustomDataset
+        train_filenames = self.opt._train_filenames
+        val_filenames = self.opt._val_filenames
+        img_ext = '.png' if self.opt.png else '.jpg'
+        train_dataset = self.dataset(
+            self.opt.data_path, train_filenames, self.opt.height, self.opt.width,
+            self.opt.frame_ids, 4, is_train=True, img_ext=img_ext)
+        val_dataset = self.dataset(
+            self.opt.data_path, val_filenames, self.opt.height, self.opt.width,
+            self.opt.frame_ids, 4, is_train=False, img_ext=img_ext)
+        loader_options = dict(num_workers=self.opt.num_workers, pin_memory=True,
+                              drop_last=True, persistent_workers=self.opt.num_workers > 0,
+                              prefetch_factor=2 if self.opt.num_workers > 0 else None)
+        self.train_loader = DataLoader(train_dataset, self.opt.batch_size, True, **loader_options)
+        self.val_loader = DataLoader(val_dataset, self.opt.batch_size, True, **loader_options)
+        self.val_iter = iter(self.val_loader)
+        self.fixed_loader = DataLoader(
+            val_dataset, self.opt.batch_size, shuffle=False, num_workers=0, drop_last=True)
+        self.fixed_val_batch = next(iter(self.fixed_loader))
+        self.num_total_steps = len(self.train_loader) * (self.opt.num_epochs - self.opt.start_epoch)
 
         self.writers = {}
         for mode in ["train", "val", "val_fixed"]:
@@ -454,39 +258,14 @@ class Trainer:
         self.save_opts()
 
     def set_train(self):
-        """Convert all models to training mode with Two-Stage Asymmetric Logic.
-        Stage I: Freeze Backbone (Encoder + Depth Decoder) to align randomly initialized heads.
-        Stage II: Global Fine-tuning with Decoupled Learning Rates.
-        """
-        # Determine if we are in Phase 1 (Backbone Frozen)
-        # Absolute logic: ensure Stage I only occurs during initial epochs.
-        is_phase1 = (self.epoch < self.opt.phase1_epochs)
-
-        for name, m in self.models.items():
-            if is_phase1 and (name == "encoder" or name == "depth"):
-                # STAGE I: Physical Freezing
-                m.eval()  # Keep BN statistics static
-                for param in m.parameters():
-                    param.requires_grad = False
-            elif name == "encoder":
-                # [SOTA SECRET: Permanent Encoder Lock]
-                # Pre-trained ViT encoder is already "invincible".
-                # Decoupling it completely from gradient backprop saves Stage II from collapse.
-                m.eval()
-                for param in m.parameters():
-                    param.requires_grad = False
-            else:
-                # STAGE II or New Heads: Full training mode
-                m.train()
-                for param in m.parameters():
-                    param.requires_grad = True
-
-        if self.step % self.opt.log_frequency == 0:
-            if is_phase1:
-                print(f"  [TRAIN REGIME] Epoch {self.epoch}: Backbone (Encoder/Decoder) is LOCKED (Stage I).")
-            else:
-                # Stage II: Unfrozen Decoder
-                print(f"  [TRAIN REGIME] Epoch {self.epoch}: Backbone Decoder is UNFROZEN (Stage II). Encoder stays LOCKED.")
+        """Train the backbone first; freeze the depth encoder during refinement."""
+        for name, model in self.models.items():
+            frozen = self.opt.phase == "refinement" and name == "encoder"
+            model.eval() if frozen else model.train()
+            for param in model.parameters():
+                param.requires_grad = not frozen
+        # SEE outputs are detached at the SMF input. Its projection parameters
+        # receive no gradients from the depth loss.
 
     def set_eval(self):
         """Convert all models to testing/evaluation mode
@@ -495,196 +274,91 @@ class Trainer:
             m.eval()
 
     def train(self):
-        """Run the entire training pipeline
-        """
+        """Run the selected phase, preserving optimizer state on explicit resume."""
         self.step = 0
         self.start_time = time.time()
-        self.best_avg_loss = float('inf')
-
-        # Resume / Load Logic:
-        start_epoch = 0
-        load_folder = self.opt.load_weights_folder
-
-        # [NEW] Explicit Resume Logic
-        if self.opt.resume:
-            models_dir = os.path.join(self.log_path, "models")
-            if os.path.exists(models_dir):
-                weight_folders = []
-                for item in os.listdir(models_dir):
-                    if item.startswith("weights_") and not item.endswith("best"):
-                        try:
-                            epoch_num = int(item.split("_")[1])
-                            weight_folders.append((epoch_num, os.path.join(models_dir, item)))
-                        except:
-                            continue
-                if weight_folders:
-                    weight_folders.sort(key=lambda x: x[0], reverse=True)
-                    latest_epoch, load_folder = weight_folders[0]
-                    print(f"  [RESUME] Auto-detected latest checkpoint: weights_{latest_epoch}")
-                    self.opt.load_weights_folder = load_folder
-
-                    # Ensure model is LOADED (including optimizer state)
-                    # Note: load_model is also called in __init__, but if load_folder changed here,
-                    # we must re-load to catch the correct epoch weights.
-                    self.load_model()
-
-                    start_epoch = latest_epoch + 1
-                    print(f"  [RESUME] Resuming from Epoch {start_epoch}")
-                else:
-                    print(f"  [RESUME] No checkpoints found in {models_dir}. Starting from scratch.")
-
-        elif load_folder is not None and os.path.isdir(load_folder):
-            folder_name = os.path.basename(load_folder)
-            if folder_name.startswith("weights_") and "best" not in folder_name:
-                try:
-                    loaded_epoch = int(folder_name.split("_")[1])
-                    # If loading a specific checkpoint from THIS experiment (num_epochs matches)
-                    if loaded_epoch < self.opt.num_epochs:
-                        start_epoch = loaded_epoch + 1
-                        print(f"  [CONTINUE] Specific checkpoint detected. Continuing from Epoch {start_epoch}")
-                    else:
-                        print(f"  [RESET] Loaded epoch {loaded_epoch} >= {self.opt.num_epochs}. Starting at Epoch 0.")
-                except:
-                    pass
-
-        self.epoch = start_epoch
-        for self.epoch in range(start_epoch, self.opt.num_epochs):
+        self.invocation_start_epoch = self.opt.start_epoch
+        if self.loaded_training_state is not None:
+            rng = self.loaded_training_state["rng"]
+            random.setstate(rng["python"])
+            np.random.set_state(rng["numpy"])
+            torch.set_rng_state(rng["torch"])
+            if rng["cuda"] is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(rng["cuda"])
+        self.write_run_record()
+        for self.epoch in range(self.opt.start_epoch, self.opt.num_epochs):
             self.run_epoch()
-            if (self.epoch + 1) % self.opt.save_frequency == 0:
-                self.save_model()
-
-            # Best Model Tracking (safety net based on training loss)
-            # Note: Do not overwrite per-epoch saved weights; save an additional copy to weights_best/
-            epoch_avg_loss = getattr(self, '_epoch_avg_loss', float('inf'))
-            if epoch_avg_loss < self.best_avg_loss:
-                self.best_avg_loss = epoch_avg_loss
-                best_folder = os.path.join(self.log_path, "models", "weights_best")
-                if not os.path.exists(best_folder):
-                    os.makedirs(best_folder)
-                for model_name, model in self.models.items():
-                    save_path = os.path.join(best_folder, "{}.pth".format(model_name))
-                    to_save = model.state_dict()
-                    if model_name == 'encoder':
-                        to_save['height'] = self.opt.height
-                        to_save['width'] = self.opt.width
-                        to_save['use_stereo'] = self.opt.use_stereo
-                    torch.save(to_save, save_path)
-                print(f"  [BEST] New best avg loss: {epoch_avg_loss:.5f} (Epoch {self.epoch}). Saved to weights_best/")
-
-            # Clear GPU cache after each epoch to prevent system freezes
+            self.save_model()
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-                torch.cuda.synchronize()
+
+    def write_run_record(self):
+        record = {"command": self.opt.command, "code": self.opt.code_version,
+                  "phase": self.opt.phase, "seed": self.opt.seed,
+                  "initialization": self.opt.load_weights_folder,
+                  "epoch_range": [self.opt.start_epoch, self.opt.num_epochs - 1],
+                  "data": self.opt._split_stats,
+                  "batch_size": self.opt.batch_size,
+                  "accumulation_steps": self.opt.accumulation_steps,
+                  "microbatches_per_epoch": len(self.train_loader),
+                  "updates_per_epoch": self.opt.updates_per_epoch,
+                  "planned_updates_this_invocation": self.opt.planned_phase_updates,
+                  "optimizer_updates_at_start": self.optimizer_updates,
+                  "optimizer": type(self.model_optimizer).__name__,
+                  "groups_at_start": [{k: v for k, v in g.items() if k != "params"}
+                                      for g in self.model_optimizer.param_groups],
+                  "scheduler_at_start": self.model_lr_scheduler.state_dict()}
+        record_path = Path(self.log_path) / ("run_" + str(time.time_ns()) + ".json")
+        record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
     def run_epoch(self):
-        """Run a single epoch of training and validation
-        """
-        # [PHASE TRANSITION HOOK]
-        # When moving from Phase 1 (Frozen) to Phase 2 (Joint Fine-Tuning),
-        # we can inject a specific backbone if requested, but for Stage 1
-        # mdp_stage1 (num_epochs=10, phase1=10), it will just end at epoch 9.
-        if self.epoch == self.opt.phase1_epochs and self.opt.num_epochs > self.opt.phase1_epochs:
-            print(f"\n" + "!" * 60)
-            print(f"!!! [PHASE TRANSITION] Entering Phase 2 Joint Training at Epoch {self.epoch}")
-            print("!" * 60 + "\n")
-            # Backbone will be unfrozen in set_train() below.
-
-        print(f"Epoch {self.epoch} | Training")
+        """One epoch with the released reprojection/smoothness objective."""
+        print(f"Epoch {self.epoch} | {self.opt.phase} | Training")
         self.set_train()
-
+        epoch_start = time.time()
         epoch_loss = 0.0
-
-        # Warmup Logic: Linearly Ramping LRs during early epochs
-        if self.epoch < self.opt.warmup_epochs:
-            # We use a 1-based relative mapping for the factor [1..warmup_epochs+1]
-            warmup_factor = (self.epoch + 1) / (self.opt.warmup_epochs + 1)
-            # Head groups (0 ~ num_head_groups-1): head LR
-            for i in range(self.num_head_groups):
-                self.model_optimizer.param_groups[i]['lr'] = self.opt.head_learning_rate * warmup_factor
-            # Remaining groups: Backbones / Offsets
-            for i in range(self.num_head_groups, len(self.model_optimizer.param_groups)):
-                self.model_optimizer.param_groups[i]['lr'] = self.opt.learning_rate * warmup_factor
-
-        elif self.epoch == self.opt.warmup_epochs:
-            # Warmup just ended: restore exact target LRs
-            for i in range(self.num_head_groups):
-                self.model_optimizer.param_groups[i]['lr'] = self.opt.head_learning_rate
-            for i in range(self.num_head_groups, len(self.model_optimizer.param_groups)):
-                self.model_optimizer.param_groups[i]['lr'] = self.opt.learning_rate
-            print(f"  [LR] Warmup ended at epoch {self.epoch}. LRs reset to targets.")
-
-        # Print LRs for visibility
-        lr_info = " | ".join([f"G{i}={g['lr']:.2e}" for i, g in enumerate(self.model_optimizer.param_groups)])
-        print(f"  [LR] Epoch {self.epoch}: {lr_info}")
-
-        # =====================================================================
-        # [SOTA FIX] Gradient Accumulation Micro-Op Core (The Gradient Accumulation Engine)
-        # =====================================================================
+        updates_before = self.optimizer_updates
+        lrs_before = [g["lr"] for g in self.model_optimizer.param_groups]
+        print("  [LR] " + " | ".join(f"G{i}={lr:.8g}" for i, lr in enumerate(lrs_before)))
         self.model_optimizer.zero_grad()
-        accumulation_steps = getattr(self.opt, "accumulation_steps", 1)
-
+        accumulation_steps = self.opt.accumulation_steps
         for batch_idx, inputs in enumerate(self.train_loader):
-
             before_op_time = time.time()
-
             outputs, losses = self.process_batch(inputs)
-
-            if torch.isnan(losses["loss"]):
-                print(f" [CRITICAL] NaN loss detected at Epoch {self.epoch} Step {self.step}. Skipping batch...")
-                self.model_optimizer.zero_grad()  # Discard the current dirty gradients
-                continue
-
-            # Scale loss for gradient accumulation (strictly physically proportional scaling)
-            loss = losses["loss"] / accumulation_steps
-            loss.backward()
-
-            # [SOTA FIX] Accumulation Step Logic
-            # Only allow clipping and stepping when accumulation reaches the specified steps, or this is the last batch of the epoch.
-            if (batch_idx + 1) % accumulation_steps == 0 or (batch_idx + 1) == len(self.train_loader):
-                # Gradient Clipping (ultimate stability optimization: 1.0 -> 0.8)
-                # Must be placed after accumulation is complete! Otherwise each incomplete micro-batch will be erroneously clipped!
-                torch.nn.utils.clip_grad_norm_(self.parameters_to_train, 0.8)
-
+            if not torch.isfinite(losses["loss"]).all():
+                raise FloatingPointError(f"Nonfinite loss at epoch {self.epoch}, batch {batch_idx}")
+            (losses["loss"] / accumulation_steps).backward()
+            if (batch_idx + 1) % accumulation_steps == 0 or batch_idx + 1 == len(self.train_loader):
+                norm = torch.nn.utils.clip_grad_norm_(self.parameters_to_train, 0.8)
+                if not torch.isfinite(norm):
+                    raise FloatingPointError(f"Nonfinite gradient at epoch {self.epoch}, batch {batch_idx}")
                 self.model_optimizer.step()
+                self.optimizer_updates += 1
                 self.model_optimizer.zero_grad()
-
-            # Statistics still use the true (unscaled) physical loss value
             epoch_loss += losses["loss"].item()
-
-            duration = time.time() - before_op_time
-
-            # Log frequency
             if self.step % self.opt.log_frequency == 0:
-                self.log_time(batch_idx, duration, losses["loss"].cpu().data)
-
+                self.log_time(batch_idx, time.time() - before_op_time, losses["loss"].detach())
                 if "depth_gt" in inputs:
                     self.compute_depth_losses(inputs, outputs, losses)
-
                 self.log("train", inputs, outputs, losses)
                 self.val()
-
-            # Release intermediate variables to prevent memory leaks
             del outputs, losses
-
             self.step += 1
-        # =====================================================================
-
-        # Log epoch result
-        avg_loss = epoch_loss / len(self.train_loader) if len(self.train_loader) > 0 else 0
-        self._epoch_avg_loss = avg_loss  # Used by best model tracking
-        log_file = os.path.join(self.log_path, "training_log.txt")
-        with open(log_file, "a") as f:
-            f.write(f"Epoch: {self.epoch} | Average Loss: {avg_loss:.5f}\n")
-        print(f"End of Epoch {self.epoch}, Average Loss: {avg_loss:.5f}")
-
-        # Step LR Scheduler (step every epoch after warmup ends, until the last epoch reaches the exact minimum)
-        if self.opt.warmup_epochs <= self.epoch < self.opt.num_epochs:
-            self.model_lr_scheduler.step()
-
-        # Memory Hygiene: Clear cache after each epoch to prevent VRAM fragmentation during long 25-epoch runs
-        if not self.opt.no_cuda:
-            torch.cuda.empty_cache()
+        actual_updates = self.optimizer_updates - updates_before
+        if actual_updates != self.opt.updates_per_epoch:
+            raise RuntimeError(f"Update count mismatch: {actual_updates} vs {self.opt.updates_per_epoch}")
+        self._epoch_avg_loss = epoch_loss / len(self.train_loader)
+        self.model_lr_scheduler.step()
+        record = {"epoch": self.epoch, "phase": self.opt.phase, "loss": self._epoch_avg_loss,
+                  "duration_seconds": time.time() - epoch_start,
+                  "optimizer_updates": actual_updates, "phase_optimizer_updates": self.optimizer_updates,
+                  "lrs_used": lrs_before,
+                  "lrs_next": [g["lr"] for g in self.model_optimizer.param_groups]}
+        with open(os.path.join(self.log_path, "training_log.jsonl"), "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
+        print(f"End of Epoch {self.epoch} | loss={self._epoch_avg_loss:.5f} | "
+              f"updates={actual_updates} | phase updates={self.optimizer_updates}")
 
     def process_batch(self, inputs):
         """Pass a batch through the network and generate images and losses
@@ -706,15 +380,10 @@ class Trainer:
         if not self.opt.disable_multihead:
             F_dec = outputs[("F_dec", 0)]  # (B, 16, H, W)
 
-            # [FIX v13] ALWAYS detach F_dec for auxiliary heads.
-            # Old logic switched detach→attached at Epoch 5, causing auxiliary loss gradients to suddenly flood
-            # the backbone encoder → catastrophic interference → depth map instant collapse.
-            # Principle (CVPR 2024 'Mind The Edge'): Auxiliary tasks use stop-gradient;
-            # the backbone is driven only by photometric reconstruction loss (the primary task).
+            # Released gradient graph: isolate decoder features before SEE.
             F_dec_isolated = F_dec.detach()
 
-            # A. Edge Head (High-Pass Frequency Extractor)
-            # Input: F_dec_isolated (Detached in P1 / Attached in P2)
+            # SEE computes fixed feature projections and the RGB-frequency response.
             E_dense, E_high, F_edge = self.models["edge_head"](
                 F_dec_isolated, rgb_input=inputs[("color", 0, 0)]
             )
@@ -722,41 +391,29 @@ class Trainer:
             outputs["E_high"] = E_high
             outputs["F_edge"] = F_edge
 
-            # [FIX v13] Always detach — prevent auxiliary head gradients from backpropagating through depth_head into the backbone
+            # Neither SEE output receives gradients from the final depth objective.
             F_edge_in = F_edge.detach()
 
-            # [SOTA FIX v25: Passing E_dense as Semantic Gate]
-            # Pass E_dense to depth_head for texture filtering during mask generation.
             fusion_outputs = self.models["depth_head"](
                 F_dec,
                 F_edge_in,
                 E_high,
-                E_dense.detach(),  # [Instruction 3: Semantic Isolation]
+                E_dense.detach(),
             )
 
             outputs["W_soft_mask"] = fusion_outputs.get("W_soft_mask")
             outputs["q_threshold"] = fusion_outputs.get("q_threshold")
             outputs["E_high_raw"] = fusion_outputs.get("E_high_raw")
 
-            # [SOTA FIX v30: THE SOUL (Early Gated Injection)]
+            # Blend auxiliary and backbone predictions before image reconstruction.
             # Must happen BEFORE generate_images_pred so that warping uses fused depth!
             W_edge = outputs["W_soft_mask"]
             if W_edge is not None:
-                # 1. Generate Master Mask at Scale 0
-                # Master Mask: 1=Smooth(Backbone), 0=Edge(DCN)
-                # Note: We use 1.0 as the multiplier here to get the full spatial selection power
-                # [ABLATION] Bypass Routing
-                if getattr(self.opt, "disable_routing", False):
-                    # Force master dampening to 0 to uniformly apply Naive Concat across whole image
-                    self.master_dampening_mask = torch.zeros_like(W_edge)
-                else:
-                    self.master_dampening_mask = torch.clamp(1.0 - W_edge, min=0.0, max=1.0)
-
-                    # [SOTA FIX v34: Sky Defensive Gate - Injection Protection]
-                    # Stop noisy DCN head from leaking into sky/darkness. Force Backbone dominance.
-                    rgb_mean = inputs[("color", 0, 0)].mean(dim=1, keepdim=True)
-                    sky_mask = ((rgb_mean > 0.95) | (rgb_mean < 0.05)).float()
-                    self.master_dampening_mask = torch.max(self.master_dampening_mask, sky_mask)
+                self.master_dampening_mask = torch.clamp(1.0 - W_edge, min=0.0, max=1.0)
+                # Retain the backbone at very bright or dark image pixels.
+                rgb_mean = inputs[("color", 0, 0)].mean(dim=1, keepdim=True)
+                sky_mask = ((rgb_mean > 0.95) | (rgb_mean < 0.05)).float()
+                self.master_dampening_mask = torch.max(self.master_dampening_mask, sky_mask)
 
                 # 2. Perform Injection for ALL scales
                 for s in self.opt.scales:
@@ -775,7 +432,7 @@ class Trainer:
                         else:
                             mask_s = self.master_dampening_mask
 
-                        # Selection: Backbone where smooth, DCN where edge
+                        # Blend backbone and auxiliary normalized inverse depth.
                         outputs[("disp", s)] = disp_backbone * mask_s + disp_fusion * (1.0 - mask_s)
 
         if self.opt.predictive_mask:
@@ -935,19 +592,13 @@ class Trainer:
         return reprojection_loss
 
     def compute_losses(self, inputs, outputs):
-        """Compute all losses: Reprojection, Smoothness (Repulsive), Frequency
-        """
+        """Minimum photometric reprojection and standard edge-aware smoothness."""
         losses = {}
         total_loss = 0
 
         # Defensive initialization: ensure master_dampening_mask exists (prevent AttributeError from out-of-order scales)
         if not hasattr(self, 'master_dampening_mask'):
             self.master_dampening_mask = None
-
-        # Phased Loss Activation
-        # Epoch 0-4: Photo only. Epoch 5+: Add L_freq and Repulsive Smooth
-        use_multihead_loss = (not self.opt.disable_multihead) and \
-                             (self.epoch >= self.opt.loss_start_epoch)
 
         for scale in self.opt.scales:
             loss = 0
@@ -1016,7 +667,7 @@ class Trainer:
 
             loss += to_optimise.mean()
 
-            # Smoothness Loss with Repulsive Field
+            # Standard Monodepth2 edge-aware smoothness.
             mean_disp = disp.mean(2, True).mean(3, True)
             norm_disp = disp / (mean_disp + 1e-7)
 
@@ -1122,9 +773,7 @@ class Trainer:
                         outputs["identity_selection/{}".format(s)][j][None, ...], self.step)
 
             # Log Multi-Head Outputs
-            # Industrial mode (no ablation_stage) shows EVERYTHING.
-            # Ablation mode shows only what is active.
-            is_industrial = self.opt.ablation_stage is None
+            is_industrial = True
 
             if not self.opt.disable_multihead:
                 if outputs.get("E_dense") is not None:
@@ -1145,7 +794,6 @@ class Trainer:
 
                     writer.add_image("w_soft_mask_raw/{}".format(j), outputs["W_soft_mask"][j].float(), self.step)
 
-               # Normal/Curvature visualizers removed
 
                 if outputs.get("W_soft_mask") is not None:
                     # TensorBoard visual probe: directly use the Master Mask already computed in compute_losses.
@@ -1186,140 +834,93 @@ class Trainer:
                             writer.add_image("edge_on_image/{}".format(j), overlay, self.step)
 
     def save_opts(self):
-        """Save options to disk so we know what we ran this experiment with
-        """
-        models_dir = os.path.join(self.log_path, "models")
-        if not os.path.exists(models_dir):
-            os.makedirs(models_dir)
-        to_save = self.opt.__dict__.copy()
-
-        with open(os.path.join(models_dir, 'opt.json'), 'w') as f:
-            json.dump(to_save, f, indent=2)
+        models_dir = Path(self.log_path) / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        options = {k: v for k, v in vars(self.opt).items() if not k.startswith("_")}
+        (models_dir / "opt.json").write_text(json.dumps(options, indent=2), encoding="utf-8")
+        for split, lines in (("train", self.opt._train_filenames), ("val", self.opt._val_filenames)):
+            (models_dir / (split + "_files_used.txt")).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     def save_model(self):
-        """Save model weights to disk (and optimizer/scheduler/scaler)
-        """
-        save_folder = os.path.join(self.log_path, "models", "weights_{}".format(self.epoch))
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
-
-        for model_name, model in self.models.items():
-            save_path = os.path.join(save_folder, "{}.pth".format(model_name))
-
-            # [SOTA LOCK] Unwrap torch.compile wrapper before saving to disk.
-            # This strips the "._orig_mod" prefix from state_dict keys, ensuring the weights
-            # remain compatible with non-Linux/Windows/CPU environments.
+        """Publish a checkpoint only after every model and training state is saved."""
+        root = Path(self.log_path) / "models"
+        final = root / f"weights_{self.epoch}"
+        temporary = root / f".weights_{self.epoch}.saving"
+        if final.exists() or temporary.exists():
+            raise FileExistsError(f"Checkpoint target already exists: {final} or {temporary}")
+        temporary.mkdir()
+        for name, model in self.models.items():
             real_model = model._orig_mod if hasattr(model, "_orig_mod") else model
-            to_save = real_model.state_dict()
-            if model_name == 'encoder':
-                to_save['height'] = self.opt.height
-                to_save['width'] = self.opt.width
-                to_save['use_stereo'] = self.opt.use_stereo
-            torch.save(to_save, save_path)
-
-        # Save Optimizer, Scheduler
-        save_path = os.path.join(save_folder, "{}.pth".format("adam"))
-        torch.save({
-            'optimizer': self.model_optimizer.state_dict(),
-            'scheduler': self.model_lr_scheduler.state_dict(),
-            'epoch': self.epoch,
-        }, save_path)
+            state = real_model.state_dict()
+            if name == "encoder":
+                state.update(height=self.opt.height, width=self.opt.width, use_stereo=self.opt.use_stereo)
+            torch.save(state, temporary / (name + ".pth"))
+        state = {"optimizer": self.model_optimizer.state_dict(),
+                 "scheduler": self.model_lr_scheduler.state_dict(),
+                 "epoch": self.epoch, "phase": self.opt.phase, "seed": self.opt.seed,
+                 "optimizer_updates": self.optimizer_updates,
+                 "options": {k: v for k, v in vars(self.opt).items() if not k.startswith("_")},
+                 "rng": {"python": random.getstate(), "numpy": np.random.get_state(),
+                         "torch": torch.get_rng_state(),
+                         "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None}}
+        torch.save(state, temporary / "adam.pth")
+        marker = {"format": 1, "epoch": self.epoch, "phase": self.opt.phase,
+                  "optimizer_updates": self.optimizer_updates, "seed": self.opt.seed,
+                  "code": self.opt.code_version}
+        (temporary / "COMPLETE.json").write_text(json.dumps(marker, indent=2), encoding="utf-8")
+        os.replace(temporary, final)
+        # Keep every epoch checkpoint. Existing checkpoints are never pruned.
+        print(f"  Saved complete checkpoint: {final}")
 
     def load_model(self):
-        """Load model(s) from disk
-        """
-        self.opt.load_weights_folder = os.path.expanduser(self.opt.load_weights_folder)
-
-        assert os.path.isdir(self.opt.load_weights_folder), \
-            "Cannot find folder {}".format(self.opt.load_weights_folder)
-        print("loading model from folder {}".format(self.opt.load_weights_folder))
-
-        for n in self.opt.models_to_load:
-            print("Loading {} weights...".format(n))
-
-            if n not in self.models:
-                # If model n is disabled (e.g. normal_head in ablation), skip it
+        folder = Path(self.opt.load_weights_folder)
+        print(f"Loading {self.opt.phase} initialization: {folder}")
+        for name in self.opt.models_to_load:
+            if name not in self.models:
                 continue
-
-            path = os.path.join(self.opt.load_weights_folder, "{}.pth".format(n))
-
-            if not os.path.exists(path):
-                # Skip loading auxiliary heads if they don't exist in checkpoint (e.g. resuming baseline)
-                print(f"Skipping {n} (not found in checkpoint)")
-                continue
-
-            model_dict = self.models[n].state_dict()
-            pretrained_dict = torch.load(path, weights_only=False)
-
-            # [SOTA MAPPING] Prefix Alignment for torch.compile
-            # If model is already compiled but checkpoint is clean, or vice versa, align them.
-            if any(k.startswith("_orig_mod.") for k in model_dict.keys()) and \
-                    not any(k.startswith("_orig_mod.") for k in pretrained_dict.keys()):
-                pretrained_dict = {"_orig_mod." + k: v for k, v in pretrained_dict.items()}
-            elif not any(k.startswith("_orig_mod.") for k in model_dict.keys()) and \
-                    any(k.startswith("_orig_mod.") for k in pretrained_dict.keys()):
-                pretrained_dict = {k.replace("_orig_mod.", ""): v for k, v in pretrained_dict.items()}
-
-            # [Physics-Based Initialization]
-            # Differentiating between "Trained Features" and "New Physics Modules"
-            checkpoint_keys = set(pretrained_dict.keys())
-            model_keys = set(model_dict.keys())
-
-            missing_keys = model_keys - checkpoint_keys
-            unexpected_keys = checkpoint_keys - model_keys
-
-            if len(missing_keys) > 0:
-                print(f"  [PARTIAL LOAD] {n}: Missing keys (random init): {sorted(list(missing_keys))}")
-            if len(unexpected_keys) > 0:
-                print(f"  [PARTIAL LOAD] {n}: Unexpected keys (ignored): {sorted(list(unexpected_keys))}")
-
-            pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-            model_dict.update(pretrained_dict)
-            self.models[n].load_state_dict(model_dict)
-
-        # loading adam state
-        optimizer_load_path = os.path.join(self.opt.load_weights_folder, "adam.pth")
-        if os.path.isfile(optimizer_load_path):
-            # [ADAM MOMENTUM ISOLATION]
-            # If we are loading from the 50-epoch baseline (weights_49), we MUST ignore the old optimizer state.
-            # The architecture (Multi-Head/DCN) and loss landscape (3D Repulsive Fields) are too different.
-            # Loading old momentum would cause the "Muddy Start" effect, slowing down or poisoning convergence.
-            # [DE-MINING] Decoupled from string-matching via formal --reset_optimizer flag.
-            checkpoint = {}  # Initialize to empty dict to prevent UnboundLocalError
-            if self.opt.reset_optimizer:
-                print("  [Cold Start] --reset_optimizer is SET. Skipping Adam state loading for new phase alignment.")
-            else:
-                print("Loading Adam weights")
-                try:
-                    # Load to CPU to prevent CUDA OOM spikes (crucial for ablation loops)
-                    checkpoint = torch.load(optimizer_load_path, map_location='cpu', weights_only=False)
-                    if 'optimizer' in checkpoint:
-                        self.model_optimizer.load_state_dict(checkpoint['optimizer'])
-                    else:
-                        self.model_optimizer.load_state_dict(checkpoint)
-
-                    print("[INFO] Optimizer state loaded successfully.")
-                except ValueError as e:
-                    print(f"[WARNING] Optimizer load failed (mismatched parameter groups): {e}")
-                    print("[INFO] Optimizer initialized from scratch (Normal for Ablation/Different Heads).")
-                except Exception as e:
-                    print(f"[WARNING] Optimizer load failed with error: {e}")
-
-            if 'scheduler' in checkpoint and hasattr(self, 'model_lr_scheduler'):
-                print("Loading Scheduler state")
-                try:
-                    self.model_lr_scheduler.load_state_dict(checkpoint['scheduler'])
-                except Exception as e:
-                    print(f"[WARNING] Scheduler load failed: {e}")
-
-            if 'scaler' in checkpoint and hasattr(self, 'scaler'):
-                print("Loading AMP Scaler state")
-                self.scaler.load_state_dict(checkpoint['scaler'])
-        else:
-            print("Cannot find Adam weights so Adam is randomly initialized")
+            path = folder / (name + ".pth")
+            state = torch.load(path, map_location="cpu", weights_only=False)
+            if "state_dict" in state:
+                state = state["state_dict"]
+            state = {key.removeprefix("module.").removeprefix("_orig_mod."): value
+                     for key, value in state.items()}
+            if name == "encoder":
+                for key in ("height", "width"):
+                    if key in state and int(state[key]) != getattr(self.opt, key):
+                        raise ValueError(f"Checkpoint {key} differs from training input size")
+                state = {key: value for key, value in state.items()
+                         if key not in ("height", "width", "use_stereo")}
+            self.models[name].load_state_dict(state, strict=True)
+            if any(not torch.isfinite(value).all() for value in state.values()
+                   if isinstance(value, torch.Tensor) and value.is_floating_point()):
+                raise ValueError(f"Nonfinite model weights: {path}")
+        if self.opt.reset_optimizer:
+            print("  New phase: fresh AdamW and scheduler; backbone optimizer state is not reused.")
+            return
+        checkpoint = torch.load(folder / "adam.pth", map_location="cpu", weights_only=False)
+        if checkpoint.get("phase") != self.opt.phase or checkpoint.get("epoch") != self.opt.start_epoch - 1:
+            raise ValueError("Resume epoch/phase disagrees with the checkpoint")
+        if checkpoint.get("seed") != self.opt.seed:
+            raise ValueError("Resume seed differs from checkpoint")
+        saved_options = checkpoint["options"]
+        for key in ("batch_size", "accumulation_steps", "num_workers", "height", "width",
+                    "target_sparsity", "learning_rate", "head_learning_rate", "backbone_learning_rate",
+                    "decoder_learning_rate", "backbone_lr_decay", "microbatches_per_epoch"):
+            if saved_options.get(key) != getattr(self.opt, key):
+                raise ValueError(f"Resume option differs: {key}")
+        for split, expected in (("train", self.opt._train_filenames), ("val", self.opt._val_filenames)):
+            saved_list = folder.parent / (split + "_files_used.txt")
+            if saved_list.read_text(encoding="utf-8").splitlines() != expected:
+                raise ValueError(f"Resume {split} list differs from the saved run")
+        self.model_optimizer.load_state_dict(optimizer_state_without_unused_gate(
+            checkpoint["optimizer"], self.model_optimizer, self.models))
+        self.model_lr_scheduler.load_state_dict(checkpoint["scheduler"])
+        self.optimizer_updates = int(checkpoint["optimizer_updates"])
+        self.loaded_training_state = checkpoint
+        print(f"  Restored AdamW, scheduler and {self.optimizer_updates} phase updates.")
 
     def cleanup(self):
-        """Explicitly delete models and clear CUDA memory to prevent OOM in ablation loops
+        """Explicitly close loaders/writers and free models between training phases
         """
         print(f"  [CLEANUP] Clearing memory for stage {self.opt.model_name}...")
 

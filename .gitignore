@@ -1,4 +1,29 @@
 # Byte-compiled / optimized / DLL files
+# Data, checkpoints and generated experiments are distributed separately.
+/ancient_architecture_data/
+/weights/
+/weights_*/
+/ckpt/
+/tmp/
+/results/
+/runs/
+/logs/
+*.pth
+*.pt
+*.ckpt
+*.npy
+*.npz
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+events.out.tfevents.*
+.idea/
+.vscode/
+run_ablation*.py
+evaluate_parameter_perturbation*.py
+
 __pycache__/
 *.py[codz]
 *$py.class
