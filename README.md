@@ -15,8 +15,8 @@ cd SEMF-Depth
 pip install -r requirements.txt
 ```
 
-The model uses the Python CNN helpers in `mmcv-lite` and `mmengine`;
-compiled MMCV CUDA operators are not required.
+The model uses `mmcv-lite` and `mmengine`; compiled MMCV CUDA operators
+are not required.
 
 ## Data and pretrained backbone
 
@@ -59,7 +59,8 @@ python train.py \
   --log_dir ./tmp --model_name SEMF \
   --height 480 --width 640 \
   --batch_size 8 --accumulation_steps 2 --num_workers 4 \
-  --seed 1234 --learning_rate 2e-6 --head_learning_rate 2e-4
+  --seed 1234 --learning_rate 2e-6 --head_learning_rate 2e-4 \
+  --backbone_learning_rate 5e-5 --decoder_learning_rate 1e-4
 ```
 
 With the backbone in `./weights` or `./weights/weights_49`, this runs 20
@@ -77,12 +78,36 @@ To resume the same run, append `--resume` to its training command. This restores
 the models, optimizer, scheduler, epoch and random states. An explicit checkpoint
 directory can also follow `--resume`.
 
-Use `python train.py --print_config` to check the training plan without
-starting training, and `python train.py --help` for available options.
-View logs with `tensorboard --logdir ./tmp/SEMF`.
+Both stages use AdamW with betas `(0.9, 0.999)` and epsilon `1e-8`.
+Initial parameter-group learning rates are:
 
-The two-stage learning rates, update counts, initialization and gradient paths
-are summarized in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+| Phase | Epochs | Parameter groups | Initial learning rates |
+|---|---|---|---|
+| Backbone | 0–49 | Depth decoder and pose networks; MPViT encoder | `1e-4`; `5e-5` |
+| Refinement | 50–69 | SMF and pose decoder; depth decoder and pose encoder | `2e-4`; `2e-6` |
+
+The backbone uses `ExponentialLR(gamma=0.9)`. Refinement starts a fresh
+optimizer and `CosineAnnealingLR(T_max=65, eta_min=1e-7)`, with 20 epoch-wise
+steps and no warmup or batch-size LR scaling. Weight decay is `0.01`;
+one-dimensional parameters use `0` during refinement. The depth encoder is
+frozen during refinement. Fixed SEE parameters remain in the head groups.
+
+The default lists give 4,072 training targets, 509 batches and 255 optimizer
+updates per epoch, including the last accumulation window: 12,750 updates for
+a new backbone run and 5,100 for refinement. The supplied 50-epoch backbone
+records 45,800 optimizer steps; the retained Full `weights_69` records 5,100
+refinement updates.
+
+Training uses photometric reprojection and edge-aware smoothness losses.
+SEE is fixed; the decoder and SMF are updated through the fused prediction.
+See the overall architecture figure in the paper for the loss and gradient paths.
+
+Reference implementation:
+[`692a823`](https://github.com/Jianfei-Teng/SEMF-Depth/tree/692a823c90bdab9005c715bb349ad80acab46ca4).
+Each run records its checkout commit, command, seed and update counts.
+
+Use `python train.py --print_config` to inspect the plan without training.
+View logs with `tensorboard --logdir ./tmp/SEMF`.
 
 ## Evaluation
 
@@ -94,11 +119,14 @@ python evaluate_metrics.py \
 ```
 
 This evaluates Abs Rel, Sq Rel, RMSE, RMSE log, the three accuracies at
-`1.25`, `1.25^2`, `1.25^3`, and CD. The default manifest contains 489 pairs
-across scenes 01–12. Use `--scenes 01 11 12`, for example, to select scenes,
-or `--dry-run` to check image/GT pairs and intrinsics before inference.
+`1.25`, `1.25^2`, `1.25^3`, and CD. The bundled manifest contains 489 RGB/GT
+pairs. Use `--scenes 01 11 12`, for example, to select scenes, or `--dry-run`
+to check pairs and intrinsics without inference.
 
-For the separately stored original and additional test sets:
+The packaged scene IDs `02/04/06/09` correspond to additional scenes
+`3/5/10/9`. The two-root command below uses the original scene IDs.
+
+For the paper's 12 scenes in the separately stored original and additional sets:
 
 ```bash
 python evaluate_metrics.py \
@@ -109,15 +137,19 @@ python evaluate_metrics.py \
   --output-dir ./results/selected12
 ```
 
+This selection contains 489 pairs. Adding `06` to `--scenes` includes the
+55 images in the original scene 06, giving 13 scenes and 544 pairs.
+RGB files may be JPG, JPEG or PNG; ground-truth depth alone is not a model input.
+
 Evaluation uses the Garg crop, per-image median scaling and a scoring range
 of 0.001–80 m. CD uses `splits/相机内参.json`, scaled by the full depth-map
 dimensions. It is the sum of the two mean squared nearest-neighbor distances
 in m², with at most 20,000 sampled points per cloud; `--cd-max-points 0` uses
 all points.
 
-TXT reports contain per-scene results, an equal-scene mean and an image mean.
 The two-root command produces three TXT files: one per test set and one
-combined mean. See `python evaluate_metrics.py --help` for other options.
+combined report, with per-scene results, an equal-scene mean and an image mean.
+See `python evaluate_metrics.py --help` for other options.
 
 ## License
 
