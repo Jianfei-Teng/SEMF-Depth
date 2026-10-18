@@ -132,6 +132,20 @@ python evaluate_metrics.py \
   --weights ./tmp/SEMF/refinement/models/weights_69 --dry-run
 ```
 
+## Acknowledgements
+
+This project builds on [MonoViT](https://github.com/zxcqlf/MonoViT),
+[Monodepth2](https://github.com/nianticlabs/monodepth2),
+[MPViT](https://github.com/youngwanLEE/MPViT), and
+[HR-Depth](https://github.com/shawLyu/HR-Depth). We thank the authors for sharing
+their code.
+
 ## License
 
-See [LICENSE](LICENSE). The inherited Monodepth2 code is for non-commercial use.
+See [LICENSE](LICENSE) for the MIT license on original contributions.
+Third-party code retains its original license:
+
+- [MonoViT](LICENSES/MonoViT.txt) and [HR-Depth](LICENSES/HR-Depth.txt): MIT.
+- [Monodepth2](LICENSES/Monodepth2.txt): non-commercial use only.
+- [MPViT](LICENSES/MPViT.md): its License and Service Agreement, including
+  [GPLv3](LICENSES/GPL-3.0.txt) and commercial licensing terms.

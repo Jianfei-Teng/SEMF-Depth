@@ -19,3 +19,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Third-party code
+----------------
+
+The MIT License above covers original contributions to SEMF-Depth and does not
+replace the licenses of third-party code included in this repository.
+
+Original license texts are retained in LICENSES/:
+- MonoViT: LICENSES/MonoViT.txt
+- HR-Depth: LICENSES/HR-Depth.txt
+- Monodepth2: LICENSES/Monodepth2.txt (non-commercial use only)
+- MPViT: LICENSES/MPViT.md and LICENSES/GPL-3.0.txt
