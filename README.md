@@ -57,8 +57,7 @@ Use `--stage refine` to require an existing backbone, or `--stage backbone`
 to run only the first stage. For ImageNet encoder initialization, add
 `--encoder_pretrained ./ckpt/mpvit_small.pth`.
 
-Both stages use AdamW. The backbone stage follows the
-[MonoViT](https://github.com/zxcqlf/MonoViT) optimizer grouping:
+Both stages use AdamW with the following initial learning rates:
 
 | Phase | Parameter groups | Initial learning rates |
 |---|---|---|
