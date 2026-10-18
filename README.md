@@ -28,9 +28,9 @@ The model uses `mmcv-lite`; compiled MMCV CUDA operators are not required.
 
 | Resource | Download | Extract to |
 |---|---|---|
-| Ancient architecture dataset | Link to be added | `./ancient_architecture_data` |
-| Initialization weights (50-epoch backbone) | Link to be added | `./weights` |
-| Full SEMF-Depth model trained on ancient architecture | Link to be added | `./tmp/SEMF/refinement/models/weights_69` |
+| Ancient architecture dataset | [Baidu Netdisk](https://pan.baidu.com/s/1l_t3OPJbO8HLGn69DmINTQ?pwd=6pjw) (code: `6pjw`) | `./ancient_architecture_data` |
+| Initialization weights (50-epoch backbone) | [Baidu Netdisk](https://pan.baidu.com/s/1jd117vwJB9Smicr0sgiU3g?pwd=i3ng) (code: `i3ng`) | `./weights` |
+| Full SEMF-Depth model trained on ancient architecture | [Baidu Netdisk](https://pan.baidu.com/s/1rG6G46p8w1QcTdMRDSUyVQ?pwd=tw5p) (code: `tw5p`) | `./tmp/SEMF/refinement/models/weights_69` |
 
 Place the dataset in `./ancient_architecture_data` and the supplied 50-epoch
 backbone in `./weights`:
