@@ -87,13 +87,12 @@ projections to detached decoder features; its edge features and dense response
 are detached before SMF. Photometric reprojection and edge-aware smoothness
 losses update the depth decoder, SMF and pose networks.
 
-The default lists contain 4,072 valid targets. At batch size 8 with accumulation
-2, a new run uses 255 optimizer updates per epoch: 12,750 for the backbone and
-5,100 for refinement. The supplied backbone's optimizer state records 45,800
+The training set contains 4,074 left-view images. Excluding the first and last
+frames leaves 4,072 targets with both temporal neighbors. At batch size 8 with
+accumulation 2, a new run uses 255 optimizer updates per epoch: 12,750 for the
+backbone and 5,100 for refinement. The supplied backbone's optimizer state records 45,800
 updates; the retained Full checkpoint records 5,100 refinement updates.
 
-Reference model source:
-[`SEMF-Depth@692a823`](https://github.com/Jianfei-Teng/SEMF-Depth/tree/692a823c90bdab9005c715bb349ad80acab46ca4).
 Each run writes its command, seed, initialization checkpoint, parameter-group
 learning rates, update counts and checkout commit to `run_*.json` in its log
 directory. Use `git rev-parse HEAD` to identify the checked-out source version.
@@ -112,27 +111,11 @@ python evaluate_metrics.py \
 ```
 
 This computes the seven depth metrics and CD on the 489 RGB–GT pairs in the
-bundled manifest. Use `--scenes 01 11 12` to select scenes.
-
-For the paper's 12 scenes stored in separate original and additional test folders:
-
-```bash
-python evaluate_metrics.py \
-  --weights ./tmp/SEMF/refinement/models/weights_69 \
-  --test-root ./test --extra-test-root ./add_new_test_11 \
-  --gt-root ./ancient_architecture_data/splits/eigen/gt_npy \
-  --scenes 01 03 05 07 08 10 11 12 加3 加5 加9 加10 \
-  --output-dir ./results/selected12
-```
-
-This also selects 489 pairs. In the packaged dataset, scene IDs `02/04/06/09` correspond to
-additional scenes `3/5/10/9`. JPG, JPEG and PNG inputs are supported.
+bundled manifest, `splits/eigen/test_pairs.txt`. JPG, JPEG and PNG inputs are supported.
 
 Evaluation uses the Garg crop, per-image median scaling and a 0.001–80 m range.
 CD uses full-depth-map intrinsics and the sum of bidirectional mean squared
 nearest-neighbor distances (m²), sampling up to 20,000 points per cloud.
-The two-folder command writes three TXT reports: one per test set and one
-combined report, with scene means and image means. See `--help` for options.
 
 ## Configuration and data checks
 
