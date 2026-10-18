@@ -1,9 +1,28 @@
-# SEMF-Depth
+<h1 align="center">SEMF-Depth</h1>
 
-Official PyTorch implementation of **Texture-Structure Decoupled Monocular Depth
-Estimation in Complex 3D Reconstruction Scenes**.
+<p align="center">
+  <strong>Texture-Structure Decoupled Monocular Depth Estimation<br>
+  in Complex 3D Reconstruction Scenes</strong>
+</p>
 
-Jianfei Teng, Xiaoling Yao, Lihua Hu, Yang Ma, Jifu Zhang
+<p align="center">Jianfei Teng · Xiaoling Yao · Lihua Hu · Yang Ma · Jifu Zhang</p>
+
+<p align="center">
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?logo=pytorch&amp;logoColor=white" alt="PyTorch 2.0 or newer"></a>
+  <img src="https://img.shields.io/badge/GPU-RTX%205090%20%C3%97%201-76B900?logo=nvidia&amp;logoColor=white" alt="One NVIDIA RTX 5090 GPU">
+</p>
+
+<p align="center">
+  <a href="#installation">Installation</a> ·
+  <a href="#data-and-checkpoints">Data and checkpoints</a> ·
+  <a href="#training">Training</a> ·
+  <a href="#evaluation">Evaluation</a> ·
+  <a href="#results">Results</a>
+</p>
+
+## Overview
+
+Official PyTorch implementation of SEMF-Depth.
 
 SEMF-Depth is a self-supervised monocular depth estimation framework. Its structural
 edge enhancement (SEE) strategy combines image-frequency responses with projected
@@ -12,7 +31,10 @@ uses these signals to control local corrections to the backbone prediction.
 
 ![Overview of SEMF-Depth](assets/overall_architecture.png)
 
-SEE and SMF:
+### Structural Edge Enhancement and Structure-Edge-Aware Masked Fusion
+
+SEE provides image-frequency and projected decoder responses. SMF uses these
+responses to weight the auxiliary depth correction at each pixel.
 
 ![SEE strategy and SMF mechanism](assets/module_mechanism.png)
 
@@ -127,18 +149,22 @@ nearest-neighbor distances (m²), sampling up to 20,000 points per cloud.
 
 Mean results over the 12 test sub-scenes. RMSE is in m and CD is in m².
 
-| Method | Abs Rel ↓ | Sq Rel ↓ | RMSE ↓ | RMSE log ↓ | δ < 1.25 ↑ | δ < 1.25² ↑ | δ < 1.25³ ↑ | CD ↓ |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Monodepth2 | 0.1424 | 0.5166 | 0.3975 | 0.1770 | 0.8488 | 0.9595 | 0.9856 | 0.1179 |
-| ManyDepth | 0.2692 | 0.2551 | 0.5879 | 0.3144 | 0.5780 | 0.8499 | 0.9434 | 0.1281 |
-| MonoViT | 0.1255 | 0.0565 | 0.2845 | 0.1646 | 0.8619 | 0.9679 | 0.9881 | 0.1340 |
-| Lite-Mono | 0.2461 | 0.2163 | 0.5392 | 0.2915 | 0.6185 | 0.8681 | 0.9545 | 0.2890 |
-| Mono-ViFI | 0.1310 | 0.0817 | 0.3263 | 0.1696 | 0.8544 | 0.9677 | 0.9886 | 0.1250 |
-| DCPI-Depth | 0.3338 | 0.3244 | 0.7057 | 0.3891 | 0.4564 | 0.7567 | 0.9048 | 6.5350 |
-| SPIdepth | 0.1651 | 0.0918 | 0.3577 | 0.2066 | 0.7669 | 0.9492 | 0.9828 | 0.1939 |
-| MG-Mono | 0.1418 | 0.0934 | 0.3726 | 0.1854 | 0.8380 | 0.9532 | 0.9783 | 0.1927 |
-| Manydepth2 | 0.2460 | 0.2142 | 0.5350 | 0.2907 | 0.6162 | 0.8699 | 0.9524 | 0.1422 |
-| **SEMF-Depth (ours)** | **0.1191** | **0.0516** | **0.2732** | **0.1578** | **0.8777** | **0.9707** | **0.9892** | **0.1169** |
+![Quantitative comparison with publication venues and years; lower errors and CD and higher threshold accuracies are better](assets/quantitative_comparison.svg)
+
+<details>
+<summary>Baseline papers</summary>
+
+- **Monodepth2 — ICCV 2019:** [Digging Into Self-Supervised Monocular Depth Estimation](https://doi.org/10.1109/ICCV.2019.00393).
+- **ManyDepth — CVPR 2021:** [The Temporal Opportunist: Self-Supervised Multi-Frame Monocular Depth](https://doi.org/10.1109/CVPR46437.2021.00122).
+- **MonoViT — 3DV 2022:** [MonoViT: Self-Supervised Monocular Depth Estimation with a Vision Transformer](https://doi.org/10.1109/3DV57658.2022.00077).
+- **Lite-Mono — CVPR 2023:** [Lite-Mono: A Lightweight CNN and Transformer Architecture for Self-Supervised Monocular Depth Estimation](https://doi.org/10.1109/CVPR52729.2023.01778).
+- **Mono-ViFI — ECCV 2024:** [Mono-ViFI: A Unified Learning Framework for Self-Supervised Single- and Multi-Frame Monocular Depth Estimation](https://doi.org/10.1007/978-3-031-72995-9_6).
+- **DCPI-Depth — IEEE TIP 2025:** [DCPI-Depth: Explicitly Infusing Dense Correspondence Prior to Unsupervised Monocular Depth Estimation](https://doi.org/10.1109/TIP.2025.3581422).
+- **SPIdepth — CVPR Workshops 2025:** [SPIdepth: Strengthened Pose Information for Self-Supervised Monocular Depth Estimation](https://doi.org/10.1109/CVPRW67362.2025.00091).
+- **MG-Mono — PR 2026:** [MG-Mono: A Lightweight Multi-Granularity Method for Self-Supervised Monocular Depth Estimation](https://doi.org/10.1016/j.patcog.2025.112223).
+- **Manydepth2 — ICRA 2026:** [Manydepth2: Motion-Aware Self-Supervised Monocular Depth Estimation in Dynamic Scenes](https://arxiv.org/abs/2312.15268).
+
+</details>
 
 Qualitative depth comparisons on five test examples:
 
