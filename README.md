@@ -1,14 +1,10 @@
-<h1 align="center">SEMF-Depth</h1>
-
-<p align="center">
-  <strong>Texture-Structure Decoupled Monocular Depth Estimation<br>
-  in Complex 3D Reconstruction Scenes</strong>
-</p>
+<h1 align="center">Texture-Structure Decoupled Monocular Depth Estimation<br>
+in Complex 3D Reconstruction Scenes</h1>
 
 <p align="center">Jianfei Teng · Xiaoling Yao · Lihua Hu · Yang Ma · Jifu Zhang</p>
 
 <p align="center">
-  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C?logo=pytorch&amp;logoColor=white" alt="PyTorch 2.0 or newer"></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.9.1-EE4C2C?logo=pytorch&amp;logoColor=white" alt="PyTorch 2.9.1"></a>
   <img src="https://img.shields.io/badge/GPU-RTX%205090%20%C3%97%201-76B900?logo=nvidia&amp;logoColor=white" alt="One NVIDIA RTX 5090 GPU">
 </p>
 
@@ -40,11 +36,12 @@ responses to weight the auxiliary depth correction at each pixel.
 
 ## Installation
 
-Install Python 3.10+, PyTorch 2.0+ and a matching torchvision build, then run:
+For CUDA 13.0, use Python 3.10+ with PyTorch 2.9.1 and torchvision 0.24.1:
 
 ```bash
 git clone https://github.com/Jianfei-Teng/SEMF-Depth.git
 cd SEMF-Depth
+pip install torch==2.9.1 torchvision==0.24.1 --index-url https://download.pytorch.org/whl/cu130
 pip install -r requirements.txt
 ```
 
@@ -150,21 +147,6 @@ nearest-neighbor distances (m²), sampling up to 20,000 points per cloud.
 Mean results over the 12 test sub-scenes. RMSE is in m and CD is in m².
 
 ![Quantitative comparison with publication venues and years; lower errors and CD and higher threshold accuracies are better](assets/quantitative_comparison.svg)
-
-<details>
-<summary>Baseline papers</summary>
-
-- **Monodepth2 — ICCV 2019:** [Digging Into Self-Supervised Monocular Depth Estimation](https://doi.org/10.1109/ICCV.2019.00393).
-- **ManyDepth — CVPR 2021:** [The Temporal Opportunist: Self-Supervised Multi-Frame Monocular Depth](https://doi.org/10.1109/CVPR46437.2021.00122).
-- **MonoViT — 3DV 2022:** [MonoViT: Self-Supervised Monocular Depth Estimation with a Vision Transformer](https://doi.org/10.1109/3DV57658.2022.00077).
-- **Lite-Mono — CVPR 2023:** [Lite-Mono: A Lightweight CNN and Transformer Architecture for Self-Supervised Monocular Depth Estimation](https://doi.org/10.1109/CVPR52729.2023.01778).
-- **Mono-ViFI — ECCV 2024:** [Mono-ViFI: A Unified Learning Framework for Self-Supervised Single- and Multi-Frame Monocular Depth Estimation](https://doi.org/10.1007/978-3-031-72995-9_6).
-- **DCPI-Depth — IEEE TIP 2025:** [DCPI-Depth: Explicitly Infusing Dense Correspondence Prior to Unsupervised Monocular Depth Estimation](https://doi.org/10.1109/TIP.2025.3581422).
-- **SPIdepth — CVPR Workshops 2025:** [SPIdepth: Strengthened Pose Information for Self-Supervised Monocular Depth Estimation](https://doi.org/10.1109/CVPRW67362.2025.00091).
-- **MG-Mono — PR 2026:** [MG-Mono: A Lightweight Multi-Granularity Method for Self-Supervised Monocular Depth Estimation](https://doi.org/10.1016/j.patcog.2025.112223).
-- **Manydepth2 — ICRA 2026:** [Manydepth2: Motion-Aware Self-Supervised Monocular Depth Estimation in Dynamic Scenes](https://arxiv.org/abs/2312.15268).
-
-</details>
 
 Qualitative depth comparisons on five test examples:
 
