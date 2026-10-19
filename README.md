@@ -145,7 +145,7 @@ nearest-neighbor distances (m²), sampling up to 20,000 points per cloud.
 
 ## Visualization
 
-Export depth predictions and RGB-frequency responses from an image or directory:
+Export depth predictions and the SEE/SMF response maps from an image or directory:
 
 ```bash
 python visualization.py \
@@ -155,10 +155,12 @@ python visualization.py \
 ```
 
 Directories are searched recursively. Pass multiple paths after `--input` to
-process several folders. Each image produces separate PNGs in `depth/` and
-`E_rgb/`, preserving the input folder structure and original image dimensions.
-Depth colors use the image's 2nd–98th percentiles; RGB-frequency responses use
-the fixed range [0, 1]. Add `--device cpu` for CPU inference.
+process several folders. Each image produces separate PNGs in `depth/`,
+`E_rgb/`, `E_dense/` and `W_soft/`, preserving the input folder structure and
+original image dimensions. Depth colors use the image's 2nd–98th percentiles;
+the three response maps use a fixed grayscale range [0, 1], with brighter
+pixels indicating higher values. `W_soft` is the SMF mask before the final
+brightness safeguard. Add `--device cpu` for CPU inference.
 
 For paired ground-truth visualizations, replace `--input` with
 `--test-files ./splits/eigen/test_pairs.txt --data-root ./ancient_architecture_data --save-gt`.

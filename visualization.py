@@ -1,4 +1,4 @@
-"""Save SEMF depth predictions and RGB-frequency responses as individual PNGs."""
+"""Save SEMF depth, E_rgb, E_dense and W_soft as individual PNGs."""
 from __future__ import annotations
 
 import argparse
@@ -78,8 +78,8 @@ def collect_images(args):
 def destinations(item, args):
     folder = args.output_dir / item.destination.parent
     filename = item.destination.stem + ".png"
-    paths = {"depth": folder / "depth" / filename,
-             "E_rgb": folder / "E_rgb" / filename}
+    paths = {name: folder / name / filename
+             for name in ("depth", "E_rgb", "E_dense", "W_soft")}
     if args.save_gt:
         paths["GT_depth"] = folder / "GT_depth" / filename
     return paths
@@ -137,11 +137,12 @@ def depth_colors(depth, limits=None, valid=None):
     return Image.fromarray(rgb)
 
 
-def render_images(item, inverse, frequency, args):
+def render_images(item, inverse, responses, args):
     if not np.isfinite(inverse).all() or np.any(inverse <= 0):
         raise ValueError(f"Invalid predicted inverse depth: {item.image}")
-    if not np.isfinite(frequency).all():
-        raise ValueError(f"Invalid RGB-frequency response: {item.image}")
+    for name, response in responses.items():
+        if response.shape != inverse.shape or not np.isfinite(response).all():
+            raise ValueError(f"Invalid {name} response: {item.image}")
     with Image.open(item.image) as original:
         size = original.size
     if args.save_gt:
@@ -153,8 +154,9 @@ def render_images(item, inverse, frequency, args):
     else:
         inverse = np.asarray(Image.fromarray(inverse).resize(size, Image.Resampling.BILINEAR))
         images = {"depth": depth_colors(1.0 / inverse)}
-    images["E_rgb"] = Image.fromarray(
-        np.rint(np.clip(frequency, 0, 1) * 255).astype(np.uint8))
+    for name, response in responses.items():
+        images[name] = Image.fromarray(
+            np.rint(np.clip(response, 0, 1) * 255).astype(np.uint8))
     return {key: image.resize(size, Image.Resampling.BILINEAR)
             for key, image in images.items()}
 
@@ -167,22 +169,30 @@ def run_visualization(args):
         print("Image inputs, checkpoint filenames and output paths checked; no inference run.")
         return
     predictor = Predictor(args)
-    captured = []
+    captured = {name: [] for name in ("E_rgb", "E_dense", "W_soft")}
 
-    def capture_frequency(module, inputs, output):
-        captured.append(output[1][:, 0].detach().cpu().numpy())
+    def capture_see(module, inputs, output):
+        captured["E_dense"].append(output[0][:, 0].detach().cpu().numpy())
+        captured["E_rgb"].append(output[1][:, 0].detach().cpu().numpy())
 
-    hook = predictor.models["edge_head"].register_forward_hook(capture_frequency)
+    def capture_smf(module, inputs, output):
+        captured["W_soft"].append(output["W_soft_mask"][:, 0].detach().cpu().numpy())
+
+    hooks = [predictor.models["edge_head"].register_forward_hook(capture_see),
+             predictor.models["depth_head"].register_forward_hook(capture_smf)]
     start = time.monotonic()
     try:
         for offset in range(0, len(items), args.batch_size):
             batch = items[offset:offset + args.batch_size]
-            captured.clear()
+            for values in captured.values():
+                values.clear()
             predictions = predictor(batch)
-            if len(captured) != 1 or len(captured[0]) != len(batch):
-                raise RuntimeError("Expected one SEE frequency response per input image")
-            for item, inverse, frequency in zip(batch, predictions, captured[0]):
-                images = render_images(item, inverse, frequency, args)
+            if any(len(values) != 1 or len(values[0]) != len(batch)
+                   for values in captured.values()):
+                raise RuntimeError("Expected one SEE/SMF response per input image")
+            for index, (item, inverse) in enumerate(zip(batch, predictions)):
+                responses = {name: values[0][index] for name, values in captured.items()}
+                images = render_images(item, inverse, responses, args)
                 paths = destinations(item, args)
                 for key, image in images.items():
                     paths[key].parent.mkdir(parents=True, exist_ok=True)
@@ -192,7 +202,8 @@ def run_visualization(args):
             eta = elapsed / completed * (len(items) - completed)
             print(f"{completed}/{len(items)} images; elapsed={elapsed:.0f}s; ETA={eta:.0f}s", flush=True)
     finally:
-        hook.remove()
+        for hook in hooks:
+            hook.remove()
     print(f"Saved individual PNG files to {args.output_dir}", flush=True)
 
 
