@@ -63,7 +63,7 @@ def make_parser(description=__doc__):
     parser.add_argument("--target-sparsity", type=float, default=0.08)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
-    parser.add_argument("--intrinsics", type=Path, default=Path("./splits/相机内参.json"))
+    parser.add_argument("--intrinsics", type=Path, default=Path("./splits/camera_intrinsics.json"))
     parser.add_argument("--intrinsics-format", choices=("normalized", "pixel"), default="normalized")
     parser.add_argument("--intrinsics-size", type=int, nargs=2, metavar=("WIDTH", "HEIGHT"))
     parser.add_argument("--cd-max-points", type=int, default=20000,

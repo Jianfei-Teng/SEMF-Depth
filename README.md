@@ -75,7 +75,7 @@ weights/
 Training uses left-view triplets with offsets `[0, -1, 1]`. Fixed train/validation
 lists are also provided in `splits/ancient`; use `--split_dir ./splits/ancient`
 to select them. Test pairs and camera intrinsics are in `splits/eigen/test_pairs.txt`
-and `splits/相机内参.json`.
+and `splits/camera_intrinsics.json`.
 
 ## Training
 
