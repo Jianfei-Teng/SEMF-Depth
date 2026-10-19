@@ -13,6 +13,7 @@ Estimation in Complex 3D Reconstruction Scenes</h1>
   <a href="#data-and-checkpoints">Data and checkpoints</a> ·
   <a href="#training">Training</a> ·
   <a href="#evaluation">Evaluation</a> ·
+  <a href="#visualization">Visualization</a> ·
   <a href="#results">Results</a>
 </p>
 
@@ -141,6 +142,28 @@ bundled manifest, `splits/eigen/test_pairs.txt`. JPG, JPEG and PNG inputs are su
 Evaluation uses the Garg crop, per-image median scaling and a 0.001–80 m range.
 CD uses full-depth-map intrinsics and the sum of bidirectional mean squared
 nearest-neighbor distances (m²), sampling up to 20,000 points per cloud.
+
+## Visualization
+
+Export depth predictions and RGB-frequency responses from an image or directory:
+
+```bash
+python visualization.py \
+  --weights ./tmp/SEMF/refinement/models/weights_69 \
+  --input ./ancient_architecture_data/test \
+  --output-dir ./results/visualization
+```
+
+Directories are searched recursively. Pass multiple paths after `--input` to
+process several folders. Each image produces separate PNGs in `depth/` and
+`E_rgb/`, preserving the input folder structure and original image dimensions.
+Depth colors use the image's 2nd–98th percentiles; RGB-frequency responses use
+the fixed range [0, 1]. Add `--device cpu` for CPU inference.
+
+For paired ground-truth visualizations, replace `--input` with
+`--test-files ./splits/eigen/test_pairs.txt --data-root ./ancient_architecture_data --save-gt`.
+This also writes `GT_depth/`, median-aligns each prediction using the evaluation
+crop, and uses the same depth color limits for each prediction/GT pair.
 
 ## Results
 
