@@ -132,12 +132,7 @@ With the bundled training lists, this command performs 255 optimizer updates
 per epoch: 12,750 for a new 50-epoch backbone run and 5,100 for the 20-epoch
 refinement. The supplied backbone checkpoint records 45,800 optimizer steps
 from its original training; the reported final model records 5,100 refinement
-updates. See [experiment_config.json](experiment_config.json) for the configuration.
-
-The experiment source is based on commit
-[`692a823`](https://github.com/Jianfei-Teng/SEMF-Depth/commit/692a823c90bdab9005c715bb349ad80acab46ca4).
-The training entry point documented here is available at
-[`78f78b0`](https://github.com/Jianfei-Teng/SEMF-Depth/commit/78f78b0990ca6850460f62ed7c1d9198a9642673).
+updates.
 
 Each run writes its command, seed, initialization checkpoint, parameter-group
 learning rates, update counts and checkout commit to `run_*.json` in its log
