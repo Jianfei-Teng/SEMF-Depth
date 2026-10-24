@@ -1,0 +1,42 @@
+{
+  "revision": "no-dense-gamma8-20261024",
+  "experiment_revision": "nodense-20261021-v3",
+  "experiment_source_sha256": "738a056513939d35f84efeb22d6a34b0e5e02094d79457aede7fa67bff695889",
+  "job": "FULL_gamma8_s1234",
+  "completed_epochs": 70,
+  "height": 480,
+  "width": 640,
+  "seed": 1234,
+  "routing": "rgb",
+  "target_sparsity": 0.08,
+  "gamma": 8.0,
+  "backbone_epochs": 50,
+  "refinement_epochs": 20,
+  "batch_size": 8,
+  "accumulation_steps": 2,
+  "num_workers": 4,
+  "backbone_learning_rates": {
+    "encoder": 5e-05,
+    "decoder_and_pose": 0.0001
+  },
+  "refinement_learning_rates": {
+    "decoder_and_pose_encoder": 2e-06,
+    "fusion_head_and_pose_decoder": 0.0002
+  },
+  "refinement_schedule": {
+    "name": "CosineAnnealingLR",
+    "T_max": 65,
+    "eta_min": 1e-07
+  },
+  "refinement_optimizer_updates": 5100,
+  "evaluation": {
+    "crop": "garg",
+    "median_scaling": "per image",
+    "valid_depth_range_m": [
+      0.001,
+      80.0
+    ],
+    "aggregation": "equal scene means",
+    "intrinsics": "full image coordinates"
+  }
+}

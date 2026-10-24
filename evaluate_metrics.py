@@ -61,6 +61,7 @@ def make_parser(description=__doc__):
                         help="auto preserves old rule: divide GT by 1000 when its maximum exceeds 100")
     parser.add_argument("--disable-median-scaling", action="store_true")
     parser.add_argument("--target-sparsity", type=float, default=0.08)
+    parser.add_argument("--gamma", type=float, default=8.0)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--intrinsics", type=Path, default=Path("./splits/camera_intrinsics.json"))
@@ -287,8 +288,8 @@ def blend_prediction(models, rgb, mode):
     output = models["depth"](models["encoder"](rgb))
     backbone = output[("disp", 0)]
     decoded = output[("F_dec", 0)]
-    dense, frequency, edge = models["edge_head"](decoded.detach(), rgb_input=rgb)
-    fusion = models["depth_head"](decoded, edge.detach(), frequency, dense.detach())
+    _, frequency, edge = models["edge_head"](decoded.detach(), rgb_input=rgb)
+    fusion = models["depth_head"](decoded, edge.detach(), frequency)
     auxiliary = fusion[("disp", 0)]
     keep_backbone = (1.0 - fusion["W_soft_mask"]).clamp(0.0, 1.0)
     mean_rgb = rgb.mean(dim=1, keepdim=True)
@@ -314,13 +315,33 @@ class Predictor:
         torch.backends.cudnn.benchmark = False
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.set_float32_matmul_precision("high")
+        config_path = args.weights / "model_config.json"
+        if config_path.is_file():
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            spec = config["job"]["spec"]
+            if spec.get("routing") != "rgb" or not spec.get("feature_fusion"):
+                raise ValueError("Checkpoint is not the complete no-dense SEMF model")
+            for key, value in (("sparsity", args.target_sparsity), ("gamma", args.gamma)):
+                if spec[key] != value:
+                    raise ValueError(f"Checkpoint {key}={spec[key]} differs from the requested setting")
+            if config["height"] != args.height or config["width"] != args.width:
+                raise ValueError("Checkpoint input resolution differs from the requested setting")
         state_path = args.weights / "training_state.pth"
         if state_path.is_file():
             state = torch.load(state_path, map_location="cpu", weights_only=False)
-            expected = {"O_FULL": "full"}
+            expected = {"O_NO_DENSE": "full"}
             variant = state.get("variant")
             if variant is not None and expected.get(variant) != args.model:
                 raise ValueError(f"Checkpoint variant {variant} is not the complete SEMF model")
+            spec = state.get("job", {}).get("spec", {})
+            if spec and (not spec.get("enabled") or not spec.get("feature_fusion")
+                         or spec.get("routing") != "rgb"
+                         or not all(spec.get(k) for k in ("dilation", "soft_weight", "brightness_protection"))
+                         or spec.get("threshold") != "quantile"):
+                raise ValueError("This entry point evaluates the complete no-dense SEMF model")
+            for key, value in (("sparsity", args.target_sparsity), ("gamma", args.gamma)):
+                if key in spec and spec[key] != value:
+                    raise ValueError(f"Checkpoint {key}={spec[key]} differs from the requested setting")
             options = state.get("options", {})
             for name in ("height", "width", "min_depth", "max_depth", "target_sparsity"):
                 if name in options and options[name] != getattr(args, name):
@@ -331,7 +352,7 @@ class Predictor:
                                                          scales=range(4))}
         self.models["edge_head"] = networks.FFTEdgeHead(16, mid_channels=32)
         self.models["depth_head"] = networks.DepthHeadWithFusion(
-            16, 32, scales=range(4), target_sparsity=args.target_sparsity)
+            16, 32, scales=range(4), target_sparsity=args.target_sparsity, gamma=args.gamma)
         for name, model in self.models.items():
             path = args.weights / f"{name}.pth"
             state = torch.load(path, map_location="cpu", weights_only=False)
@@ -401,7 +422,7 @@ def run_evaluation(args):
         args.gt_root = args.data_root / "splits/eigen/gt_npy"
     if args.height % 32 or args.width % 32 or min(args.height, args.width) <= 0:
         raise ValueError("Input height/width must be positive multiples of 32")
-    if args.batch_size <= 0 or not 0 < args.target_sparsity < 1:
+    if args.batch_size <= 0 or not 0 < args.target_sparsity < 1 or args.gamma <= 0:
         raise ValueError("Invalid batch size or routing support")
     if not 0 < args.min_depth < args.max_depth or not 0 < args.eval_min_depth < args.eval_max_depth:
         raise ValueError("Invalid depth ranges")
@@ -438,7 +459,8 @@ def run_evaluation(args):
                 "extra_test_root": str(args.extra_test_root.resolve()) if args.extra_test_root else None,
                 "scenes": sorted(set(s.scene for s in samples), key=scene_key),
                 "image_count": len(samples), "target_sparsity": args.target_sparsity,
-                "gamma": 5, "seed": 1234, "metrics": list(METRICS),
+                "gamma": args.gamma, "routing": "rgb",
+                "seed": 1234, "metrics": list(METRICS),
                 "intrinsics_file": str(args.intrinsics.resolve()), "intrinsics": matrix.tolist(),
                 "intrinsics_format": args.intrinsics_format, "intrinsics_size": args.intrinsics_size,
                 "intrinsics_coordinates": "full image; crop applied as validity mask only",

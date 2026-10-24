@@ -1,9 +1,4 @@
-"""Released SMF feature fusion and spatial routing.
-
-The auxiliary prediction uses F_dec and detached F_edge. Routing combines
-detached RGB-frequency and dense feature responses, followed by dilation,
-an image-wise quantile threshold, and exponential weighting.
-"""
+"""SEE auxiliary feature fusion and SMF soft-mask prediction."""
 
 from __future__ import absolute_import, division, print_function
 
@@ -26,11 +21,14 @@ class DepthHeadWithFusion(nn.Module):
     """Predict auxiliary inverse depth and a continuous routing mask."""
 
     def __init__(self, fdec_channels, fedge_channels,
-                 scales=range(4), target_sparsity=0.08):
+                 scales=range(4), target_sparsity=0.08, gamma=8.0):
         super().__init__()
         self.scales = scales
         self.fdec_channels = fdec_channels
         self.target_sparsity = target_sparsity
+        self.gamma = gamma
+        if not 0 < target_sparsity < 1 or gamma <= 0:
+            raise ValueError("Invalid routing sparsity or gamma")
         total_in = fdec_channels + fedge_channels
 
         self.fusion_conv = nn.Sequential(
@@ -62,24 +60,15 @@ class DepthHeadWithFusion(nn.Module):
             self.fusion_conv[0].weight[:, self.fdec_channels:, :, :].zero_()
         print(f"  [DepthHead] Fusion weights for auxiliary heads (after ch {self.fdec_channels}) zero-initialized.")
 
-    def _compute_soft_mask(self, E_high, E_dense):
-        E_high_det = torch.nan_to_num(E_high.detach(), nan=0.0)
-        E_dense_det = E_dense.detach()
-        W_raw = torch.max(E_high_det * E_dense_det, torch.pow(E_dense_det, 2.0))
-        W_dilated = F.max_pool2d(W_raw, kernel_size=3, stride=1, padding=1)
+    def _compute_soft_mask(self, E_rgb, unused_response=None):
+        response = torch.nan_to_num(E_rgb.detach(), nan=0.0)
+        response = F.max_pool2d(response, kernel_size=3, stride=1, padding=1)
+        threshold = torch.quantile(response.flatten(1), 1.0 - self.target_sparsity,
+                                   dim=1, keepdim=True).reshape(-1, 1, 1, 1)
+        weight = 1.0 - torch.exp(-self.gamma * F.relu(response - threshold))
+        return weight.clamp(0.0, 1.0), threshold
 
-        B = W_dilated.shape[0]
-        W_flat = W_dilated.view(B, -1)
-        q_threshold = torch.quantile(
-            W_flat, 1.0 - self.target_sparsity, dim=1, keepdim=True
-        )
-        dynamic_threshold = q_threshold.view(B, 1, 1, 1)
-        gamma = 5.0
-        W_trigger = F.relu(W_dilated - dynamic_threshold)
-        W_soft_mask = 1.0 - torch.exp(-gamma * W_trigger)
-        return torch.clamp(W_soft_mask, min=0.0, max=1.0), dynamic_threshold
-
-    def forward(self, F_dec, F_edge, E_high, E_dense):
+    def forward(self, F_dec, F_edge, E_high, unused_response=None):
         outputs = {}
         F_cat = torch.cat([F_dec, F_edge.detach()], dim=1)
         F_fused = self.fusion_conv(F_cat)
@@ -95,7 +84,7 @@ class DepthHeadWithFusion(nn.Module):
                 disp = self.sigmoid(self.disp_convs[f"dispconv{s}"](F_down))
             outputs[("disp", s)] = disp
 
-        W_soft_mask, q_threshold = self._compute_soft_mask(E_high, E_dense)
+        W_soft_mask, q_threshold = self._compute_soft_mask(E_high)
         outputs["W_soft_mask"] = W_soft_mask
         outputs["q_threshold"] = q_threshold
         outputs["E_high_raw"] = E_high.detach()

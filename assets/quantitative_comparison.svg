@@ -1,109 +1,107 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1472" height="650" viewBox="0 0 1472 650" role="img" aria-labelledby="title description">
-<title id="title">Depth estimation comparison across 12 test sub-scenes</title>
-<desc id="description">Publication venues and years accompany the methods. Lower error metrics and Chamfer distance are better; higher threshold accuracies are better. The best values are bold.</desc>
+<title id="title">Overall mean depth estimation comparison</title>
+<desc id="description">Results from the revised manuscript. Lower errors and CD and higher threshold accuracies are better. Best values are bold blue.</desc>
 <rect width="1472" height="650" fill="white"/>
-<g fill="#17212b" font-family="Arial, Helvetica, sans-serif" font-size="25">
-<text x="28" y="63" text-anchor="start" font-weight="700">Method</text>
-<text x="433" y="63" text-anchor="middle" font-weight="700">Abs Rel ↓</text>
-<text x="559" y="63" text-anchor="middle" font-weight="700">Sq Rel ↓</text>
-<text x="685" y="63" text-anchor="middle" font-weight="700">RMSE ↓</text>
-<text x="826" y="63" text-anchor="middle" font-weight="700">RMSE log ↓</text>
-<text x="976" y="63" text-anchor="middle" font-weight="700">δ &lt; 1.25 ↑</text>
-<text x="1120" y="63" text-anchor="middle" font-weight="700">δ &lt; 1.25² ↑</text>
-<text x="1264" y="63" text-anchor="middle" font-weight="700">δ &lt; 1.25³ ↑</text>
-<text x="1394" y="63" text-anchor="middle" font-weight="700">CD ↓</text>
-<text x="28" y="123" text-anchor="start">Monodepth2 (ICCV 2019)</text>
-<text x="433" y="123" text-anchor="middle">0.1424</text>
-<text x="559" y="123" text-anchor="middle">0.5166</text>
-<text x="685" y="123" text-anchor="middle">0.3975</text>
-<text x="826" y="123" text-anchor="middle">0.1770</text>
-<text x="976" y="123" text-anchor="middle">0.8488</text>
-<text x="1120" y="123" text-anchor="middle">0.9595</text>
-<text x="1264" y="123" text-anchor="middle">0.9856</text>
-<text x="1394" y="123" text-anchor="middle">0.1179</text>
-<text x="28" y="177" text-anchor="start">ManyDepth (CVPR 2021)</text>
-<text x="433" y="177" text-anchor="middle">0.2692</text>
-<text x="559" y="177" text-anchor="middle">0.2551</text>
-<text x="685" y="177" text-anchor="middle">0.5879</text>
-<text x="826" y="177" text-anchor="middle">0.3144</text>
-<text x="976" y="177" text-anchor="middle">0.5780</text>
-<text x="1120" y="177" text-anchor="middle">0.8499</text>
-<text x="1264" y="177" text-anchor="middle">0.9434</text>
-<text x="1394" y="177" text-anchor="middle">0.1281</text>
-<text x="28" y="231" text-anchor="start">MonoViT (3DV 2022)</text>
-<text x="433" y="231" text-anchor="middle">0.1255</text>
-<text x="559" y="231" text-anchor="middle">0.0565</text>
-<text x="685" y="231" text-anchor="middle">0.2845</text>
-<text x="826" y="231" text-anchor="middle">0.1646</text>
-<text x="976" y="231" text-anchor="middle">0.8619</text>
-<text x="1120" y="231" text-anchor="middle">0.9679</text>
-<text x="1264" y="231" text-anchor="middle">0.9881</text>
-<text x="1394" y="231" text-anchor="middle">0.1340</text>
-<text x="28" y="285" text-anchor="start">Lite-Mono (CVPR 2023)</text>
-<text x="433" y="285" text-anchor="middle">0.2461</text>
-<text x="559" y="285" text-anchor="middle">0.2163</text>
-<text x="685" y="285" text-anchor="middle">0.5392</text>
-<text x="826" y="285" text-anchor="middle">0.2915</text>
-<text x="976" y="285" text-anchor="middle">0.6185</text>
-<text x="1120" y="285" text-anchor="middle">0.8681</text>
-<text x="1264" y="285" text-anchor="middle">0.9545</text>
-<text x="1394" y="285" text-anchor="middle">0.2890</text>
-<text x="28" y="339" text-anchor="start">Mono-ViFI (ECCV 2024)</text>
-<text x="433" y="339" text-anchor="middle">0.1310</text>
-<text x="559" y="339" text-anchor="middle">0.0817</text>
-<text x="685" y="339" text-anchor="middle">0.3263</text>
-<text x="826" y="339" text-anchor="middle">0.1696</text>
-<text x="976" y="339" text-anchor="middle">0.8544</text>
-<text x="1120" y="339" text-anchor="middle">0.9677</text>
-<text x="1264" y="339" text-anchor="middle">0.9886</text>
-<text x="1394" y="339" text-anchor="middle">0.1250</text>
-<text x="28" y="393" text-anchor="start">DCPI-Depth (TIP 2025)</text>
-<text x="433" y="393" text-anchor="middle">0.3338</text>
-<text x="559" y="393" text-anchor="middle">0.3244</text>
-<text x="685" y="393" text-anchor="middle">0.7057</text>
-<text x="826" y="393" text-anchor="middle">0.3891</text>
-<text x="976" y="393" text-anchor="middle">0.4564</text>
-<text x="1120" y="393" text-anchor="middle">0.7567</text>
-<text x="1264" y="393" text-anchor="middle">0.9048</text>
-<text x="1394" y="393" text-anchor="middle">6.5350</text>
-<text x="28" y="447" text-anchor="start">SPIdepth (CVPRW 2025)</text>
-<text x="433" y="447" text-anchor="middle">0.1651</text>
-<text x="559" y="447" text-anchor="middle">0.0918</text>
-<text x="685" y="447" text-anchor="middle">0.3577</text>
-<text x="826" y="447" text-anchor="middle">0.2066</text>
-<text x="976" y="447" text-anchor="middle">0.7669</text>
-<text x="1120" y="447" text-anchor="middle">0.9492</text>
-<text x="1264" y="447" text-anchor="middle">0.9828</text>
-<text x="1394" y="447" text-anchor="middle">0.1939</text>
-<text x="28" y="501" text-anchor="start">MG-Mono (PR 2026)</text>
-<text x="433" y="501" text-anchor="middle">0.1418</text>
-<text x="559" y="501" text-anchor="middle">0.0934</text>
-<text x="685" y="501" text-anchor="middle">0.3726</text>
-<text x="826" y="501" text-anchor="middle">0.1854</text>
-<text x="976" y="501" text-anchor="middle">0.8380</text>
-<text x="1120" y="501" text-anchor="middle">0.9532</text>
-<text x="1264" y="501" text-anchor="middle">0.9783</text>
-<text x="1394" y="501" text-anchor="middle">0.1927</text>
-<text x="28" y="555" text-anchor="start">Manydepth2 (ICRA 2026)</text>
-<text x="433" y="555" text-anchor="middle">0.2460</text>
-<text x="559" y="555" text-anchor="middle">0.2142</text>
-<text x="685" y="555" text-anchor="middle">0.5350</text>
-<text x="826" y="555" text-anchor="middle">0.2907</text>
-<text x="976" y="555" text-anchor="middle">0.6162</text>
-<text x="1120" y="555" text-anchor="middle">0.8699</text>
-<text x="1264" y="555" text-anchor="middle">0.9524</text>
-<text x="1394" y="555" text-anchor="middle">0.1422</text>
-<text x="28" y="609" text-anchor="start" font-weight="700">SEMF-Depth (ours)</text>
-<text x="433" y="609" text-anchor="middle" font-weight="700">0.1191</text>
-<text x="559" y="609" text-anchor="middle" font-weight="700">0.0516</text>
-<text x="685" y="609" text-anchor="middle" font-weight="700">0.2732</text>
-<text x="826" y="609" text-anchor="middle" font-weight="700">0.1578</text>
-<text x="976" y="609" text-anchor="middle" font-weight="700">0.8777</text>
-<text x="1120" y="609" text-anchor="middle" font-weight="700">0.9707</text>
-<text x="1264" y="609" text-anchor="middle" font-weight="700">0.9892</text>
-<text x="1394" y="609" text-anchor="middle" font-weight="700">0.1169</text>
+<g font-family="Arial, Helvetica, sans-serif" font-size="25" fill="#17212b">
+<text x="28" y="63" text-anchor="start" font-weight="700" fill="#17212b">Method</text>
+<text x="433" y="63" text-anchor="middle" font-weight="700" fill="#17212b">Abs Rel ↓</text>
+<text x="559" y="63" text-anchor="middle" font-weight="700" fill="#17212b">Sq Rel ↓</text>
+<text x="685" y="63" text-anchor="middle" font-weight="700" fill="#17212b">RMSE ↓</text>
+<text x="826" y="63" text-anchor="middle" font-weight="700" fill="#17212b">RMSE log ↓</text>
+<text x="976" y="63" text-anchor="middle" font-weight="700" fill="#17212b">δ &lt; 1.25 ↑</text>
+<text x="1120" y="63" text-anchor="middle" font-weight="700" fill="#17212b">δ &lt; 1.25² ↑</text>
+<text x="1264" y="63" text-anchor="middle" font-weight="700" fill="#17212b">δ &lt; 1.25³ ↑</text>
+<text x="1394" y="63" text-anchor="middle" font-weight="700" fill="#17212b">CD ↓</text>
+<text x="28" y="123" text-anchor="start" font-weight="400" fill="#17212b">Monodepth2 (ICCV 2019)</text>
+<text x="433" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.1424</text>
+<text x="559" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.5166</text>
+<text x="685" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.3975</text>
+<text x="826" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.1770</text>
+<text x="976" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.8488</text>
+<text x="1120" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.9595</text>
+<text x="1264" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.9856</text>
+<text x="1394" y="123" text-anchor="middle" font-weight="400" fill="#17212b">0.1179</text>
+<text x="28" y="177" text-anchor="start" font-weight="400" fill="#17212b">ManyDepth (CVPR 2021)</text>
+<text x="433" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.2692</text>
+<text x="559" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.2551</text>
+<text x="685" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.5879</text>
+<text x="826" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.3144</text>
+<text x="976" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.5780</text>
+<text x="1120" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.8499</text>
+<text x="1264" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.9434</text>
+<text x="1394" y="177" text-anchor="middle" font-weight="400" fill="#17212b">0.1281</text>
+<text x="28" y="231" text-anchor="start" font-weight="400" fill="#17212b">MonoViT (3DV 2022)</text>
+<text x="433" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.1255</text>
+<text x="559" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.0565</text>
+<text x="685" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.2845</text>
+<text x="826" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.1646</text>
+<text x="976" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.8619</text>
+<text x="1120" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.9679</text>
+<text x="1264" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.9881</text>
+<text x="1394" y="231" text-anchor="middle" font-weight="400" fill="#17212b">0.1340</text>
+<text x="28" y="285" text-anchor="start" font-weight="400" fill="#17212b">Lite-Mono (CVPR 2023)</text>
+<text x="433" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.2461</text>
+<text x="559" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.2163</text>
+<text x="685" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.5392</text>
+<text x="826" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.2915</text>
+<text x="976" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.6185</text>
+<text x="1120" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.8681</text>
+<text x="1264" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.9545</text>
+<text x="1394" y="285" text-anchor="middle" font-weight="400" fill="#17212b">0.2890</text>
+<text x="28" y="339" text-anchor="start" font-weight="400" fill="#17212b">Mono-ViFI (ECCV 2024)</text>
+<text x="433" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.1310</text>
+<text x="559" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.0817</text>
+<text x="685" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.3263</text>
+<text x="826" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.1696</text>
+<text x="976" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.8544</text>
+<text x="1120" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.9677</text>
+<text x="1264" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.9886</text>
+<text x="1394" y="339" text-anchor="middle" font-weight="400" fill="#17212b">0.1250</text>
+<text x="28" y="393" text-anchor="start" font-weight="400" fill="#17212b">DCPI-Depth (CVPR 2025)</text>
+<text x="433" y="393" text-anchor="middle" font-weight="400" fill="#17212b">0.3338</text>
+<text x="559" y="393" text-anchor="middle" font-weight="400" fill="#17212b">0.3244</text>
+<text x="685" y="393" text-anchor="middle" font-weight="400" fill="#17212b">0.7057</text>
+<text x="826" y="393" text-anchor="middle" font-weight="400" fill="#17212b">0.3891</text>
+<text x="976" y="393" text-anchor="middle" font-weight="400" fill="#17212b">0.4564</text>
+<text x="1120" y="393" text-anchor="middle" font-weight="400" fill="#17212b">0.7567</text>
+<text x="1264" y="393" text-anchor="middle" font-weight="400" fill="#17212b">0.9048</text>
+<text x="1394" y="393" text-anchor="middle" font-weight="400" fill="#17212b">6.5350</text>
+<text x="28" y="447" text-anchor="start" font-weight="400" fill="#17212b">SPIdepth (WACV 2025)</text>
+<text x="433" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.1651</text>
+<text x="559" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.0918</text>
+<text x="685" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.3577</text>
+<text x="826" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.2066</text>
+<text x="976" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.7669</text>
+<text x="1120" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.9492</text>
+<text x="1264" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.9828</text>
+<text x="1394" y="447" text-anchor="middle" font-weight="400" fill="#17212b">0.1939</text>
+<text x="28" y="501" text-anchor="start" font-weight="400" fill="#17212b">MG-Mono (PR 2026)</text>
+<text x="433" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.1418</text>
+<text x="559" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.0934</text>
+<text x="685" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.3726</text>
+<text x="826" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.1854</text>
+<text x="976" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.8380</text>
+<text x="1120" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.9532</text>
+<text x="1264" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.9783</text>
+<text x="1394" y="501" text-anchor="middle" font-weight="400" fill="#17212b">0.1927</text>
+<text x="28" y="555" text-anchor="start" font-weight="400" fill="#17212b">Manydepth2 (ICRA 2026)</text>
+<text x="433" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.2460</text>
+<text x="559" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.2142</text>
+<text x="685" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.5350</text>
+<text x="826" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.2907</text>
+<text x="976" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.6162</text>
+<text x="1120" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.8699</text>
+<text x="1264" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.9524</text>
+<text x="1394" y="555" text-anchor="middle" font-weight="400" fill="#17212b">0.1422</text>
+<text x="28" y="609" text-anchor="start" font-weight="700" fill="#0000ff">SEMF-Depth (ours)</text>
+<text x="433" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.1179</text>
+<text x="559" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.0502</text>
+<text x="685" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.2710</text>
+<text x="826" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.1563</text>
+<text x="976" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.8801</text>
+<text x="1120" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.9719</text>
+<text x="1264" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.9896</text>
+<text x="1394" y="609" text-anchor="middle" font-weight="700" fill="#0000ff">0.0991</text>
 </g>
-<line x1="20" y1="22" x2="1452" y2="22" stroke="#17212b" stroke-width="2.8"/>
-<line x1="20" y1="88" x2="1452" y2="88" stroke="#17212b" stroke-width="1.5"/>
-<line x1="20" y1="628" x2="1452" y2="628" stroke="#17212b" stroke-width="2.8"/>
+<g stroke="#17212b" stroke-width="2"><path d="M20 20H1452 M20 82H1452 M20 632H1452"/></g>
 </svg>

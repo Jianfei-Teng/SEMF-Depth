@@ -1,4 +1,4 @@
-"""Save SEMF depth, E_rgb, E_dense and W_soft as individual PNGs."""
+"""Save SEMF depth, E_rgb, W_soft and projected-feature responses as PNGs."""
 from __future__ import annotations
 
 import argparse
@@ -39,6 +39,7 @@ def make_parser():
     parser.add_argument("--min-depth", type=float, default=0.1)
     parser.add_argument("--max-depth", type=float, default=80.0)
     parser.add_argument("--target-sparsity", type=float, default=0.08)
+    parser.add_argument("--gamma", type=float, default=8.0)
     parser.add_argument("--batch-size", type=int, default=1)
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument("--overwrite", action="store_true")
@@ -79,7 +80,7 @@ def destinations(item, args):
     folder = args.output_dir / item.destination.parent
     filename = item.destination.stem + ".png"
     paths = {name: folder / name / filename
-             for name in ("depth", "E_rgb", "E_dense", "W_soft")}
+             for name in ("depth", "E_rgb", "W_soft", "F_edge")}
     if args.save_gt:
         paths["GT_depth"] = folder / "GT_depth" / filename
     return paths
@@ -88,7 +89,7 @@ def destinations(item, args):
 def preflight(args, items):
     if min(args.height, args.width) <= 0 or args.height % 32 or args.width % 32:
         raise ValueError("Input height/width must be positive multiples of 32")
-    if args.batch_size < 1 or not 0 < args.target_sparsity < 1:
+    if args.batch_size < 1 or not 0 < args.target_sparsity < 1 or args.gamma <= 0:
         raise ValueError("Invalid batch size or routing support")
     if not 0 < args.min_depth < args.max_depth:
         raise ValueError("Invalid network depth range")
@@ -169,10 +170,14 @@ def run_visualization(args):
         print("Image inputs, checkpoint filenames and output paths checked; no inference run.")
         return
     predictor = Predictor(args)
-    captured = {name: [] for name in ("E_rgb", "E_dense", "W_soft")}
+    captured = {name: [] for name in ("E_rgb", "W_soft", "F_edge")}
 
     def capture_see(module, inputs, output):
-        captured["E_dense"].append(output[0][:, 0].detach().cpu().numpy())
+        # Channel RMS is a visualization of features, not a boundary probability.
+        feature = output[2].detach().square().mean(1).sqrt()
+        feature = (feature - feature.amin((-2, -1), keepdim=True))
+        feature = feature / feature.amax((-2, -1), keepdim=True).clamp_min(1e-6)
+        captured["F_edge"].append(feature.cpu().numpy())
         captured["E_rgb"].append(output[1][:, 0].detach().cpu().numpy())
 
     def capture_smf(module, inputs, output):

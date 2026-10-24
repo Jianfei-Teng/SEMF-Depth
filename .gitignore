@@ -19,6 +19,7 @@
 !/assets/overall_architecture.png
 !/assets/module_mechanism.png
 !/assets/depth_comparison.png
+!/assets/routing_signals.png
 *.tif
 *.tiff
 events.out.tfevents.*

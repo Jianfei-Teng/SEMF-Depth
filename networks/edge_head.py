@@ -1,10 +1,4 @@
-"""SEE responses from RGB frequencies and fixed decoder-feature projections.
-
-The released training graph detaches F_dec before this head and detaches
-F_edge and E_dense before SMF. These projection parameters therefore receive
-no gradient from the depth objective. E_high is the RGB high-pass response;
-it is not an independently learned geometric-boundary map.
-"""
+"""Fixed decoder-feature projection for SEE and RGB-frequency response for SMF."""
 
 from __future__ import absolute_import, division, print_function
 
@@ -24,7 +18,7 @@ class StdConv2d(nn.Conv2d):
 
 
 class FFTEdgeHead(nn.Module):
-    """Compute decoder-feature responses and a grayscale Butterworth response."""
+    """Return projected features and the RGB response used by no-dense SEMF."""
 
     def __init__(self, in_channels, mid_channels=32, fft_radius=30):
         super().__init__()
@@ -34,19 +28,17 @@ class FFTEdgeHead(nn.Module):
         self.reduce = StdConv2d(in_channels, mid_channels, 1, bias=False)
         self.bn1 = nn.GroupNorm(8, mid_channels)
         self.relu = nn.SiLU(inplace=True)
+        # Dormant checkpoint slots, kept in the server's initialization order.
         self.edge_conv = nn.Conv2d(mid_channels, 1, 1, bias=True)
-        self._hp_cache = {}
-
-    def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
-                              missing_keys, unexpected_keys, error_msgs):
-        # Older checkpoints contain this unused module; active weights are unchanged.
-        for key in list(state_dict):
-            if key.startswith(prefix + "gate_conv."):
-                del state_dict[key]
-        super()._load_from_state_dict(
-            state_dict, prefix, local_metadata, strict,
-            missing_keys, unexpected_keys, error_msgs
+        self.gate_conv = nn.Sequential(
+            StdConv2d(1 + mid_channels, mid_channels, 3, padding=1, bias=False),
+            nn.GroupNorm(8, mid_channels),
+            nn.SiLU(inplace=True),
+            nn.Conv2d(mid_channels, 1, 1, bias=True),
         )
+        with torch.no_grad():
+            self.gate_conv[-1].bias.fill_(1.0)
+        self._hp_cache = {}
 
     def _get_highpass_mask(self, H, W, device, dtype, radius):
         cache_key = (H, W, radius)
@@ -85,23 +77,14 @@ class FFTEdgeHead(nn.Module):
         return E_rgb_high / torch.clamp(e_max, min=0.1)
 
     def forward(self, F_dec, rgb_input):
-        """Return E_dense, the RGB-frequency response E_high, and F_edge."""
+        """Return an API placeholder, E_rgb and fixed projected features."""
         if rgb_input is None:
-            raise ValueError("SEE requires the original RGB image.")
-
-        F_edge = self.relu(self.bn1(self.reduce(F_dec)))
-        E_dense = torch.sigmoid(self.edge_conv(F_edge))
-
-        if rgb_input.shape[-2:] != F_dec.shape[-2:]:
-            rgb_resized = F.interpolate(
-                rgb_input, size=F_dec.shape[-2:],
-                mode="bilinear", align_corners=False
-            )
-        else:
-            rgb_resized = rgb_input
-
+            raise ValueError("SMF requires the original RGB image.")
         with torch.no_grad():
-            E_high = self._fft_highpass_rgb(rgb_resized)
-        e_max = E_high.amax(dim=(-2, -1), keepdim=True)
-        E_high = E_high / torch.clamp(e_max, min=1e-6)
-        return E_dense, E_high, F_edge
+            F_edge = self.relu(self.bn1(self.reduce(F_dec.detach())))
+            if rgb_input.shape[-2:] != F_dec.shape[-2:]:
+                rgb_input = F.interpolate(rgb_input, size=F_dec.shape[-2:],
+                                          mode="bilinear", align_corners=False)
+            E_rgb = self._fft_highpass_rgb(rgb_input)
+            E_rgb = E_rgb / E_rgb.amax(dim=(-2, -1), keepdim=True).clamp_min(1e-6)
+        return torch.zeros_like(E_rgb), E_rgb, F_edge

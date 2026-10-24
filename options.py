@@ -30,7 +30,7 @@ class MonodepthOptions:
         p.add_argument("--learning_rate", type=float, default=2e-6,
                        help="Actual refinement LR for decoder and pose encoder; no implicit scaling")
         p.add_argument("--head_learning_rate", type=float, default=2e-4,
-                       help="Actual refinement LR for SMF and pose decoder")
+                       help="Actual refinement LR for the SEE fusion head and pose decoder")
         p.add_argument("--backbone_learning_rate", type=float, default=5e-5,
                        help="Depth-encoder LR when training the initial backbone from scratch")
         p.add_argument("--decoder_learning_rate", type=float, default=1e-4,
@@ -38,6 +38,7 @@ class MonodepthOptions:
         p.add_argument("--backbone_lr_decay", type=float, default=0.9,
                        help="Epoch-wise exponential decay for the from-scratch backbone phase")
         p.add_argument("--target_sparsity", type=float, default=0.08)
+        p.add_argument("--gamma", type=float, default=8.0)
         p.add_argument("--min_depth", type=float, default=0.1)
         p.add_argument("--max_depth", type=float, default=80.0)
         p.add_argument("--disparity_smoothness", type=float, default=1e-3)

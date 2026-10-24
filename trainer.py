@@ -109,7 +109,7 @@ class Trainer:
         self.models["depth"].to(self.device)
         self.parameters_to_train += list(self.models["depth"].parameters())
 
-        # 3. SEE responses and SMF auxiliary prediction.
+        # 3. SEE feature enhancement and SMF masked prediction fusion.
         if not self.opt.disable_multihead:
             f_dec_channels = 16
 
@@ -127,7 +127,7 @@ class Trainer:
                 fdec_channels=f_dec_channels,
                 fedge_channels=32,
                 scales=self.opt.scales,
-                target_sparsity=self.opt.target_sparsity
+                target_sparsity=self.opt.target_sparsity, gamma=self.opt.gamma
             )
             self.models["depth_head"].to(self.device)
             self.parameters_to_train += list(self.models["depth_head"].parameters())
@@ -383,11 +383,10 @@ class Trainer:
             # Released gradient graph: isolate decoder features before SEE.
             F_dec_isolated = F_dec.detach()
 
-            # SEE computes fixed feature projections and the RGB-frequency response.
-            E_dense, E_high, F_edge = self.models["edge_head"](
+            # SEE projects features; SMF uses the RGB-frequency response.
+            _, E_high, F_edge = self.models["edge_head"](
                 F_dec_isolated, rgb_input=inputs[("color", 0, 0)]
             )
-            outputs["E_dense"] = E_dense
             outputs["E_high"] = E_high
             outputs["F_edge"] = F_edge
 
@@ -398,7 +397,6 @@ class Trainer:
                 F_dec,
                 F_edge_in,
                 E_high,
-                E_dense.detach(),
             )
 
             outputs["W_soft_mask"] = fusion_outputs.get("W_soft_mask")
@@ -776,8 +774,6 @@ class Trainer:
             is_industrial = True
 
             if not self.opt.disable_multihead:
-                if outputs.get("E_dense") is not None:
-                    writer.add_image("edge_dense/{}".format(j), outputs["E_dense"][j], self.step)
 
                 if outputs.get("E_high") is not None:
                     writer.add_image("edge_high/{}".format(j), outputs["E_high"][j], self.step)
@@ -904,7 +900,7 @@ class Trainer:
             raise ValueError("Resume seed differs from checkpoint")
         saved_options = checkpoint["options"]
         for key in ("batch_size", "accumulation_steps", "num_workers", "height", "width",
-                    "target_sparsity", "learning_rate", "head_learning_rate", "backbone_learning_rate",
+                    "target_sparsity", "gamma", "learning_rate", "head_learning_rate", "backbone_learning_rate",
                     "decoder_learning_rate", "backbone_lr_decay", "microbatches_per_epoch"):
             if saved_options.get(key) != getattr(self.opt, key):
                 raise ValueError(f"Resume option differs: {key}")

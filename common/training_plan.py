@@ -99,7 +99,8 @@ def build_plan(options):
             or options.log_frequency < 1):
         raise ValueError("Invalid batch/accumulation/workers/logging settings")
     if (min(options.height, options.width) <= 0 or options.height % 32 or options.width % 32
-            or not 0 < options.target_sparsity < 1 or not 0 < options.min_depth < options.max_depth):
+            or not 0 < options.target_sparsity < 1 or options.gamma <= 0
+            or not 0 < options.min_depth < options.max_depth):
         raise ValueError("Invalid image/depth/routing settings")
     if (min(options.learning_rate, options.head_learning_rate, options.backbone_learning_rate,
             options.decoder_learning_rate) <= 0 or not 0 < options.backbone_lr_decay <= 1):
@@ -170,7 +171,8 @@ def describe_plan(phases):
         rows.append({"phase": opt.phase, "epochs": [opt.start_epoch, opt.num_epochs - 1],
                      "initialization": opt.load_weights_folder, "resume": opt._resume_state is not None,
                      "batch_size": opt.batch_size, "accumulation_steps": opt.accumulation_steps,
-                     "seed": opt.seed, "data": opt._split_stats,
+                     "seed": opt.seed, "target_sparsity": opt.target_sparsity,
+                     "gamma": opt.gamma, "routing": "rgb", "data": opt._split_stats,
                      "microbatches_per_epoch": opt.microbatches_per_epoch,
                      "updates_per_epoch": opt.updates_per_epoch,
                      "planned_updates_this_invocation": opt.planned_phase_updates,
