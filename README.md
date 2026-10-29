@@ -13,8 +13,7 @@ Estimation in Complex 3D Reconstruction Scenes</h1>
   <a href="#data-and-checkpoints">Data and checkpoints</a> ·
   <a href="#training">Training</a> ·
   <a href="#evaluation">Evaluation</a> ·
-  <a href="#visualization">Visualization</a> ·
-  <a href="#results">Results</a>
+  <a href="#visualization">Visualization</a>
 </p>
 
 ## Overview
@@ -27,15 +26,11 @@ to produce an auxiliary depth prediction. Its structure-edge-aware masked fusion
 (SMF) mechanism derives soft masks from RGB-frequency responses to combine the
 backbone and auxiliary predictions.
 
-![Overview of SEMF-Depth](assets/overall_architecture.png)
-
 ### Structural Edge Enhancement and Structure-Edge-Aware Masked Fusion
 
 SEE enhances the decoder representation through feature fusion. SMF combines
 the resulting auxiliary prediction with the backbone prediction through spatial
 weighting.
-
-![SEE strategy and SMF mechanism](assets/module_mechanism.png)
 
 ## Installation
 
@@ -179,17 +174,6 @@ For paired ground-truth visualizations, replace `--input` with
 `--test-files ./splits/eigen/test_pairs.txt --data-root ./ancient_architecture_data --save-gt`.
 This also writes `GT_depth/`, median-aligns each prediction using the evaluation
 crop, and uses the same depth color limits for each prediction/GT pair.
-
-## Results
-
-Overall mean results on the ancient architecture dataset. RMSE is in m and
-CD is in m².
-
-![Quantitative comparison with publication venues and years; lower errors and CD and higher threshold accuracies are better](assets/quantitative_comparison.svg)
-
-Qualitative depth comparisons on five test examples:
-
-![RGB, ground truth and depth predictions from the comparison methods](assets/depth_comparison.png)
 
 ## Configuration and data checks
 
